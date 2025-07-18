@@ -1,7 +1,19 @@
-__pycache__ checkpoints config data dataset main.py main_backup1.py model_load_test.py models particial_fc_v2.py run_test singlemain.py tensorboar_log_run.txt test_dataset utils vit_.py weight
+# 모든 파일과 폴더 무시
 *
+
+# .gitignore 파일은 무시하지 않음
+!.gitignore
+
+# 모든 폴더 포함 (하위 폴더도 재귀적으로 허용)
+!*/
+
+# 모든 .py 파일 포함 (하위 폴더 포함)
 !*.py
 
-
-
-
+# 무시하고 싶은 폴더/파일 (선택적)
+__pycache__/
+*.pyc
+.git/
+.venv/
+*.log
+*.pt
