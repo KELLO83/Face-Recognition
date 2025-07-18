@@ -40,17 +40,10 @@ class Dataset(data.Dataset):
 
         if self.phase == 'train':
             self.transforms = V2.Compose([
-                V2.RandomHorizontalFlip(),
                 V2.ToTensor(),
-                V2.Normalize(mean=[0.5], std=[0.5])
+                V2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
             ])
 
-        else:
-            self.transforms = V2.Compose([
-                V2.CenterCrop(self.input_shape[1:]),
-                V2.ToTensor(),
-                V2.Normalize(mean=[0.5], std=[0.5])
-            ])  
 
     @property
     def get_classes(self):
