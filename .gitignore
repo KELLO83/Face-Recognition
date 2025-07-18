@@ -1,3 +1,7 @@
-!.gitignore
-*.pyc
-*.pth
+__pycache__ checkpoints config data dataset main.py main_backup1.py model_load_test.py models particial_fc_v2.py run_test singlemain.py tensorboar_log_run.txt test_dataset utils vit_.py weight
+*
+!*.py
+
+
+
+
