@@ -141,7 +141,7 @@ def main_worker(rank, world_size):
     original_full_dataset = Dataset(root=f'{opt.train_root}', phase='train', input_shape=(1, 112, 112))
     
     num_classes_to_keep = original_full_dataset.get_classes // 2
-
+    
     if rank == 0:
         logging.info(f"Original number of classes: {original_full_dataset.get_classes}")
         logging.info(f"Keeping {num_classes_to_keep} classes for training.")
@@ -150,7 +150,6 @@ def main_worker(rank, world_size):
     else:
         classes_to_keep_tensor = torch.empty(num_classes_to_keep, dtype=torch.long, device=device)
 
-    logging.info("BroadCast Class")
     dist.broadcast(classes_to_keep_tensor, src=0)
 
     classes_to_keep = classes_to_keep_tensor.cpu().numpy()
@@ -220,7 +219,7 @@ def main_worker(rank, world_size):
     for param in backbone.parameters():
         param.requires_grad = False
 
-    num_classes = filtered_dataset.get_classes # Use the new number of classes
+    num_classes = filtered_dataset.get_classes 
 
     """ HEAD """
     if opt.metric == 'add_margin':
@@ -441,9 +440,13 @@ def main_worker(rank, world_size):
                 if rank == 0:
                     logging.info(f"New best model at epoch {i} with loss: {best_val_loss:.4f}, acc: {best_val_acc:.4f}")
                     
-                    best_save_dir = os.path.join(opt.checkpoints_path, 'best')
+                    best_save_dir = os.path.join('checkpints_moduler')
                     os.makedirs(best_save_dir, exist_ok=True)
 
+
+                    best_backbone_path = os.path.join(best_save_dir, f'{opt.backbone}_backbone_best_{i}.pth')
+                    best_head_path = os.path.join(best_save_dir, f'{opt.backbone}_head_best.pth_{i}')
+              
                     checkpoint = {
                         'epoch': i,
                         'backbone_state_dict': backbone.module.state_dict() if hasattr(backbone, 'module') else backbone.state_dict(),
@@ -452,10 +455,19 @@ def main_worker(rank, world_size):
                         'scheduler_state_dict': scheduler.state_dict(),
                         'best_val_loss': best_val_loss,
                     }
-                    
+
+                    torch.save(
+                    backbone.module.state_dict() if hasattr(backbone, 'module') else backbone.state_dict(),
+                    best_backbone_path
+                         )
+                    torch.save(
+                        metric_fc.module.state_dict() if hasattr(metric_fc, 'module') else metric_fc.state_dict(),
+                    best_head_path
+                    )
+
                     best_checkpoint_path = os.path.join(best_save_dir, f'{opt.backbone}_checkpoint_best.pth')
+
                     torch.save(checkpoint, best_checkpoint_path)
-                    logging.info(f"Best checkpoint saved to {best_checkpoint_path}")
 
         dist.barrier()
 

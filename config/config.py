@@ -30,6 +30,7 @@ class Config:
 
         self.head_pretrained_weight = 'checkpoints/best/iresnet50_head_best.pth_1'
 
+        self.optimizer_pretrained = None
 
 def create_parser():
 
@@ -79,6 +80,10 @@ def create_parser():
     
     # Training parameters
     train_group = parser.add_argument_group('Training Parameters')
+
+    train_group.add_argument('--optimizer_pretrained_path',type=str,
+                             help='pretrained optimzer call path')
+
     train_group.add_argument('--train_batch_size', type=int,
                            help='Training batch size')
     
@@ -106,6 +111,7 @@ def create_parser():
     train_group.add_argument('--print_freq', type=int, default=100,
                            help='Print frequency')
     
+
     # Model paths
     model_path_group = parser.add_argument_group('Model Paths')
     model_path_group.add_argument('--checkpoints_path', type=str, default='checkpoints',
