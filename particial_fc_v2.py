@@ -113,7 +113,7 @@ class PartialFC_V2(torch.nn.Module):
         ----------
         local_embeddings: torch.Tensor
             feature embeddings on each GPU(Rank).
-        local_labels: torch.Tensor
+        local_labels: torch.Tenso
             labels on each GPU(Rank).
         Returns:
         -------
@@ -154,10 +154,11 @@ class PartialFC_V2(torch.nn.Module):
         else:
             weight = self.weight
 
-        with torch.cuda.amp.autocast(self.fp16):
+        with torch.amp.autocast(self.fp16):
             norm_embeddings = normalize(embeddings)
             norm_weight_activated = normalize(weight)
             logits = linear(norm_embeddings, norm_weight_activated)
+            
         if self.fp16:
             logits = logits.float()
         logits = logits.clamp(-1, 1)

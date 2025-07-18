@@ -22,21 +22,25 @@ import torch.utils.data
 
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
-import torch.multiprocessing 
+import torch.multiprocessing as mp
 import logging
 from tqdm import tqdm
 
 class FilteredDataset(data.Dataset):
-    def __init__(self, original_dataset, classes_to_keep):
+    def __init__(self, original_dataset, num_classes_to_keep):
         self.original_dataset = original_dataset
-        self.classes_to_keep = classes_to_keep # 사용할 클래스수
-        self.class_mapping = {old_label: new_label for new_label, old_label in enumerate(self.classes_to_keep)} # {기존클래스 : 새로운클래스명}
-
-        original_labels = np.array(self.original_dataset.labels)
-        mask = np.isin(original_labels, self.classes_to_keep) # mask생성 [0,5,10,3] [5,10] -> [F,T,T,F]
-        self.indices = np.where(mask)[0]
-
-        self.remapped_labels = np.array([self.class_mapping[label] for label in original_labels[mask]])
+        
+        total_classes = original_dataset.get_classes
+        classes_to_keep = np.random.choice(range(total_classes), num_classes_to_keep, replace=False)
+        self.class_mapping = {old_label: new_label for new_label, old_label in enumerate(classes_to_keep)}
+        
+        self.indices = []
+        self.remapped_labels = []
+        for i in range(len(original_dataset)):
+            _, original_label, _ = original_dataset[i]
+            if original_label in self.class_mapping:
+                self.indices.append(i)
+                self.remapped_labels.append(self.class_mapping[original_label])
 
     def __len__(self):
         return len(self.indices)
@@ -49,22 +53,25 @@ class FilteredDataset(data.Dataset):
 
     @property
     def get_classes(self):
-        return len(self.classes_to_keep)
+        return len(self.class_mapping)
+
 
 def save_model(backbone, metric_fc, save_path, name, iter_cnt):
     os.makedirs(save_path, exist_ok=True)
-    save_name = os.path.join(save_path, name + '_' + str(iter_cnt) + '.pth')
+    
+    backbone_save_path = os.path.join(save_path, f'{name}_backbone_{iter_cnt}.pth')
+    head_save_path = os.path.join(save_path, f'{name}_head_{iter_cnt}.pth')
 
     backbone_state_dict = backbone.module.state_dict() if hasattr(backbone, 'module') else backbone.state_dict()
     metric_fc_state_dict = metric_fc.module.state_dict() if hasattr(metric_fc, 'module') else metric_fc.state_dict()
 
-    torch.save({
-        'backbone_state_dict': backbone_state_dict,
-        'metric_fc_state_dict': metric_fc_state_dict,
-    }, save_name)
+    torch.save(backbone_state_dict, backbone_save_path)
+    torch.save(metric_fc_state_dict, head_save_path)
 
-    logging.info(f"Model saved to {save_name}")
-    return save_name
+    logging.info(f"Backbone model saved to {backbone_save_path}")
+    logging.info(f"Head model saved to {head_save_path}")
+    
+    return backbone_save_path, head_save_path
 
 def load_weights(model, weight_path, rank, model_name):
     if weight_path and os.path.exists(weight_path):
@@ -80,6 +87,7 @@ def load_weights(model, weight_path, rank, model_name):
     else:
         if rank == 0:
             logging.info(f"No pre-trained weights for {model_name} found or specified, starting from scratch.")
+
 
 def cleanup_ddp():
     if torch.distributed.is_initialized():
@@ -100,6 +108,7 @@ def setup_ddp(rank, world_size, port=13355):
     return rank
 
 
+
 def main():
     torch.backends.cudnn.benchmark = True
     torch.backends.cudnn.allow_tf32 = True
@@ -109,8 +118,11 @@ def main():
     if ngpus_per_node < 2:
         logging.warning("Warning: Single GPU training detected.")
 
-    torch.multiprocessing.spawn(main_worker, nprocs=ngpus_per_node, args=(ngpus_per_node,),join=True)
+    mp.spawn(main_worker, nprocs=ngpus_per_node, args=(ngpus_per_node,))
 
+"""
+데이터셋 분할없음
+"""
 def main_worker(rank, world_size):
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     logging.info(f"GPU Available: {torch.cuda.device_count()}")
@@ -121,14 +133,14 @@ def main_worker(rank, world_size):
 
     logdir_name = None
     if rank == 0:
-        log_idx = 0
+        i = 0
         while True:
-            logdir_name = f'./logs/train_{log_idx}'
+            logdir_name = f'./logs/train_{i}'
             if not os.path.exists(logdir_name):
                 os.makedirs(logdir_name, exist_ok=True)
                 logging.info(f"Creating TensorBoard log directory: {logdir_name}")
                 break
-            log_idx += 1
+            i += 1
     dist.barrier()
 
     writer = SummaryWriter(log_dir=logdir_name) if rank == 0 else None
@@ -139,22 +151,13 @@ def main_worker(rank, world_size):
     device = torch.device(f"cuda:{device_id}")
 
     original_full_dataset = Dataset(root=f'{opt.train_root}', phase='train', input_shape=(1, 112, 112))
-    
-    num_classes_to_keep = original_full_dataset.get_classes // 2
 
+    num_classes_to_keep = original_full_dataset.get_classes // 2
     if rank == 0:
         logging.info(f"Original number of classes: {original_full_dataset.get_classes}")
         logging.info(f"Keeping {num_classes_to_keep} classes for training.")
-        classes_to_keep = np.random.choice(range(original_full_dataset.get_classes), num_classes_to_keep, replace=False)
-        classes_to_keep_tensor = torch.from_numpy(classes_to_keep).to(device)
-    else:
-        classes_to_keep_tensor = torch.empty(num_classes_to_keep, dtype=torch.long, device=device)
 
-    logging.info("BroadCast Class")
-    dist.broadcast(classes_to_keep_tensor, src=0)
-
-    classes_to_keep = classes_to_keep_tensor.cpu().numpy()
-    filtered_dataset = FilteredDataset(original_full_dataset, classes_to_keep)
+    filtered_dataset = FilteredDataset(original_full_dataset, num_classes_to_keep)
 
     train_size = int(0.8 * len(filtered_dataset))
     val_size = len(filtered_dataset) - train_size
@@ -254,7 +257,7 @@ def main_worker(rank, world_size):
         backbone = DistributedDataParallel(backbone, device_ids=[device_id], find_unused_parameters=False)
     metric_fc = DistributedDataParallel(metric_fc, device_ids=[device_id], find_unused_parameters=False)
 
-    #backbone = torch.compile(backbone, options={"max_autotune": False})
+    backbone = torch.compile(backbone, options={"max_autotune": False})
 
 
 
@@ -290,7 +293,6 @@ def main_worker(rank, world_size):
 
     for i in range(opt.max_epoch):
         
-        f_start_time = time.time()
 
         train_sampler.set_epoch(i)
         val_sampler.set_epoch(i)
@@ -375,20 +377,13 @@ def main_worker(rank, world_size):
                 writer.add_scalar('train/epoch_loss', epoch_train_loss, i)
                 writer.add_scalar('train/epoch_acc', epoch_train_acc, i)
             
-            f_end_time = time.time()
-            print(f'--- Epoch {i} Train Summary --- Loss: {epoch_train_loss:.4f}, Acc: {epoch_train_acc:.4f} Total time  : {f_end_time - f_start_time}')
-            
-            save_model(backbone , metric_fc , opt.checkpoints_path , opt.backbone , i) # 훈련마다 저장
-        
-        
-        scheduler.step()
+            print(f'--- Epoch {i} Train Summary --- Loss: {epoch_train_loss:.4f}, Acc: {epoch_train_acc:.4f}')
 
+        scheduler.step()
 
         if rank == 0:
             os.makedirs(opt.checkpoints_path, exist_ok=True)
             save_model(backbone, metric_fc, opt.checkpoints_path, opt.backbone, i)
-
-        dist.barrier() # rank0저장 완료까지 서브프로세스 대기
 
         backbone.eval()
         metric_fc.eval()
@@ -438,24 +433,23 @@ def main_worker(rank, world_size):
                 best_val_loss = epoch_val_loss
                 best_val_acc = epoch_val_acc
 
-                if rank == 0:
-                    logging.info(f"New best model at epoch {i} with loss: {best_val_loss:.4f}, acc: {best_val_acc:.4f}")
-                    
-                    best_save_dir = os.path.join(opt.checkpoints_path, 'best')
-                    os.makedirs(best_save_dir, exist_ok=True)
-
-                    checkpoint = {
-                        'epoch': i,
-                        'backbone_state_dict': backbone.module.state_dict() if hasattr(backbone, 'module') else backbone.state_dict(),
-                        'head_state_dict': metric_fc.module.state_dict() if hasattr(metric_fc, 'module') else metric_fc.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict(),
-                        'scheduler_state_dict': scheduler.state_dict(),
-                        'best_val_loss': best_val_loss,
-                    }
-                    
-                    best_checkpoint_path = os.path.join(best_save_dir, f'{opt.backbone}_checkpoint_best.pth')
-                    torch.save(checkpoint, best_checkpoint_path)
-                    logging.info(f"Best checkpoint saved to {best_checkpoint_path}")
+                best_save_dir = os.path.join(opt.checkpoints_path, 'best')
+                os.makedirs(best_save_dir, exist_ok=True)
+                best_backbone_path = os.path.join(best_save_dir, f'{opt.backbone}_backbone_best_{i}.pth')
+                best_head_path = os.path.join(best_save_dir, f'{opt.backbone}_head_best.pth_{i}')
+                
+                logging.info(f"New best model at epoch {i} with loss: {best_val_loss:.4f}, acc: {best_val_acc:.4f}")
+                
+                torch.save(
+                    backbone.module.state_dict() if hasattr(backbone, 'module') else backbone.state_dict(),
+                    best_backbone_path
+                )
+                torch.save(
+                    metric_fc.module.state_dict() if hasattr(metric_fc, 'module') else metric_fc.state_dict(),
+                    best_head_path
+                )
+                logging.info(f"Best backbone model saved to {best_backbone_path}")
+                logging.info(f"Best head model saved to {best_head_path}")
 
         dist.barrier()
 
