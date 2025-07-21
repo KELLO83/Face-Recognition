@@ -3,7 +3,7 @@ from __future__ import print_function
 import matplotlib.pyplot as plt
 import cv2
 import os
-from data.dataset import Dataset
+from data.dataset import Dataset,FilteredDataset
 import torch
 from torch.utils import data
 import torch.nn.functional as F
@@ -26,30 +26,6 @@ import torch.multiprocessing
 import logging
 from tqdm import tqdm
 
-class FilteredDataset(data.Dataset):
-    def __init__(self, original_dataset, classes_to_keep):
-        self.original_dataset = original_dataset
-        self.classes_to_keep = classes_to_keep # 사용할 클래스수
-        self.class_mapping = {old_label: new_label for new_label, old_label in enumerate(self.classes_to_keep)} # {기존클래스 : 새로운클래스명}
-
-        original_labels = np.array(self.original_dataset.labels)
-        mask = np.isin(original_labels, self.classes_to_keep) # mask생성 [0,5,10,3] [5,10] -> [F,T,T,F]
-        self.indices = np.where(mask)[0]
-
-        self.remapped_labels = np.array([self.class_mapping[label] for label in original_labels[mask]])
-
-    def __len__(self):
-        return len(self.indices)
-
-    def __getitem__(self, index):
-        original_index = self.indices[index]
-        image, _, path = self.original_dataset[original_index]
-        new_label = self.remapped_labels[index]
-        return image, new_label, path
-
-    @property
-    def get_classes(self):
-        return len(self.classes_to_keep)
 
 def save_model(backbone, metric_fc, save_path, name, iter_cnt):
     os.makedirs(save_path, exist_ok=True)
@@ -68,10 +44,15 @@ def save_model(backbone, metric_fc, save_path, name, iter_cnt):
 
 def load_weights(model, weight_path, rank, model_name):
     if weight_path and os.path.exists(weight_path):
-        load_result = model.load_state_dict(
-            torch.load(weight_path, map_location='cpu'),
-            strict=False
-        )
+        if model_name == 'backbone':
+            load_result = model.load_state_dict(
+                torch.load(weight_path, map_location='cpu'),
+                strict=False
+            )
+
+        elif model_name == 'Head':
+            pass
+
         if rank == 0:
             logging.info(f"Pre-trained weights for {model_name} loaded from {weight_path}.")
             if load_result.missing_keys or load_result.unexpected_keys:
@@ -138,7 +119,7 @@ def main_worker(rank, world_size):
     scaler = torch.amp.GradScaler(device=f'cuda:{device_id}')
     device = torch.device(f"cuda:{device_id}")
 
-    original_full_dataset = Dataset(root=f'{opt.train_root}', phase='train', input_shape=(1, 112, 112))
+    original_full_dataset = Dataset(root=f'{opt.train_root}', phase='train')
     
     num_classes_to_keep = original_full_dataset.get_classes // 2
     
@@ -153,7 +134,7 @@ def main_worker(rank, world_size):
     dist.broadcast(classes_to_keep_tensor, src=0)
 
     classes_to_keep = classes_to_keep_tensor.cpu().numpy()
-    filtered_dataset = FilteredDataset(original_full_dataset, classes_to_keep)
+    filtered_dataset = FilteredDataset(original_full_dataset, classes_to_keep , input_shape=(1,112,112))
 
     train_size = int(0.8 * len(filtered_dataset))
     val_size = len(filtered_dataset) - train_size

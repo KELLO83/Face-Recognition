@@ -155,6 +155,7 @@ class SphereProduct(nn.Module):
         return self.__class__.__name__ + '(' \
                + 'in_features=' + str(self.in_features) \
                + ', out_features=' + str(self.out_features) \
+               + ', s=' + str(self.s) \
                + ', m=' + str(self.m) + ')'
 
 
@@ -256,3 +257,74 @@ class CosFace(torch.nn.Module):
         logits[index, labels[index].view(-1)] = final_target_logit
         logits = logits * self.s
         return logits
+
+
+class PartialArcMarginProduct(nn.Module):
+    r"""
+    Implement of large margin arc distance with partial FC.
+    This module is designed for training with a subset of classes from a large dataset.
+    It keeps the full weight matrix in memory but only computes gradients for the classes
+    present in the current mini-batch.
+
+    Args:
+        in_features: size of each input sample
+        out_features: size of each output sample (Must be the TOTAL number of classes)
+        s: norm of input feature
+        m: margin
+    """
+    def __init__(self, in_features, out_features, s=30.0, m=0.50, easy_margin=False):
+        """ out_feature -> 전체 클래스수 """
+        super(PartialArcMarginProduct, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.s = s
+        self.m = m
+        # self.weight stores the complete weight matrix for all classes
+        self.weight = Parameter(torch.FloatTensor(out_features, in_features)) 
+        nn.init.xavier_uniform_(self.weight)
+
+        self.easy_margin = easy_margin
+        self.cos_m = math.cos(m)
+        self.sin_m = math.sin(m)
+        self.th = math.cos(math.pi - m)
+        self.mm = math.sin(math.pi - m) * m
+
+    def forward(self, input, label):
+        # 1. Select partial weights based on labels in the current batch
+        # Get unique labels and sort them to ensure consistent mapping
+        unique_labels = torch.unique(label).sort()[0]
+        
+        # Select the weight vectors corresponding to the unique labels
+        partial_weight = self.weight[unique_labels]
+        
+        # 2. Calculate cosine similarity
+        # Normalize input features and partial weights
+        normalized_input = F.normalize(input)
+        normalized_partial_weight = F.normalize(partial_weight)
+        
+        # Calculate cosine similarity between features and the partial set of weights
+        cosine = F.linear(normalized_input, normalized_partial_weight)
+
+        # 3. Apply ArcFace margin logic
+        sine = torch.sqrt((1.0 - torch.pow(cosine, 2)).clamp(0, 1))
+        phi = cosine * self.cos_m - sine * self.sin_m
+        if self.easy_margin:
+            phi = torch.where(cosine > 0, phi, cosine)
+        else:
+            phi = torch.where(cosine > self.th, phi, cosine - self.mm)
+
+        # 4. Map original labels to new local indices for one-hot encoding
+        # This is crucial for the loss function to work correctly with the partial logits
+        label_map = {orig_label.item(): new_idx for new_idx, orig_label in enumerate(unique_labels)}
+        mapped_label = torch.tensor([label_map[l.item()] for l in label], device=input.device)
+
+        # 5. Create one-hot vector and calculate final output (logits for the batch)
+        one_hot = torch.zeros(cosine.size(), device=input.device)
+        one_hot.scatter_(1, mapped_label.view(-1, 1).long(), 1)
+        
+        output = (one_hot * phi) + ((1.0 - one_hot) * cosine)
+        output *= self.s
+        
+        # Return both the logits and the mapped labels.
+        # The mapped_label is the new target for the loss function.
+        return output, mapped_label

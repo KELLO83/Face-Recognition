@@ -4,7 +4,6 @@ import torch
 from torch.utils import data
 import numpy as np
 from torchvision import transforms as V2
-import torchvision
 import cv2
 import sys
 import natsort
@@ -13,9 +12,10 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 import copy
 
+
 class Dataset(data.Dataset):
 
-    def __init__(self, root , phase='train', input_shape=(1, 112, 112)):
+    def __init__(self, root , phase , input_shape):
         self.phase = phase
         self.input_shape = input_shape
 
@@ -75,9 +75,43 @@ class Dataset(data.Dataset):
     def __len__(self):
         return len(self.image_paths)
 
+class FilteredDataset(data.Dataset):
+    def __init__(self, original_dataset, classes_to_keep , partical_Margin_product = False):
+        """partical_Margin_prodcut HEAD MLP 전체 클래스수 -> 사용할 클래스수"""
+        self.original_dataset = original_dataset
+        self.partical_Margin_product = partical_Margin_product
+        self.classes_to_keep = classes_to_keep # 사용할 클래스수
+        self.class_mapping = {old_label: new_label for new_label, old_label in enumerate(self.classes_to_keep)} # {기존클래스 : 새로운클래스명}
+
+        original_labels = np.array(self.original_dataset.labels)
+        mask = np.isin(original_labels, self.classes_to_keep) # mask생성 [0,5,10,3] [5,10] -> [F,T,T,F]
+        self.indices = np.where(mask)[0]
+
+        self.remapped_labels = np.array([self.class_mapping[label] for label in original_labels[mask]])
+
+    def __len__(self):
+        return len(self.indices)
+
+    def __getitem__(self, index):
+
+        if self.partical_Margin_product:
+            original_index = self.indices[index]
+            image, original_label, path = self.original_dataset[original_index]
+            return image, original_label, path
+        
+        else:
+            original_index = self.indices[index]
+            image, _, path = self.original_dataset[original_index]
+            new_label = self.remapped_labels[index]
+            return image, new_label, path
+        
+
+    @property
+    def get_classes(self):
+        return len(self.classes_to_keep)
 
 if __name__ == '__main__':
-    dataset = Dataset(root='dataset/ms1m-arcface',
+    dataset = Dataset(root='',
                       phase='train',
                       input_shape=(1, 112, 112))
 
