@@ -12,7 +12,11 @@ import pickle
 import argparse
 from scipy.spatial.distance import cosine
 import matplotlib.pyplot as plt
+import multiprocessing
 from multiprocessing import Pool, cpu_count
+from insightface.app.face_analysis import FaceAnalysis
+
+
 
 # --- 로깅 및 경로 설정 ---
 try:
@@ -154,12 +158,16 @@ def main(args):
 
     print(f"- 동일 인물 쌍: {len(positive_pairs)}개, 다른 인물 쌍: {len(negative_pairs)}개")
 
-    # --- 3단계: 임베딩 추출 또는 캐시 로드 ---
-    # 모델 빌드는 각 병렬 프로세스 내에서 자동으로 처리됩니다.
+    # --- 3단계: 모델 빌드 ---
+    print(f"\n모델({args.model_name})을 빌드하고 GPU에 로드합니다...")
+    DeepFace.build_model(args.model_name)
+    print("모델이 성공적으로 빌드되었습니다.")
+
+    # --- 4단계: 임베딩 추출 또는 캐시 로드 ---
     dataset_name = os.path.basename(os.path.normpath(args.data_path))
     embeddings = get_all_embeddings(identity_map, args.model_name, args.detector_backend, dataset_name, use_cache=not args.no_cache)
 
-    # --- 4단계: 점수 수집 ---
+    # --- 5단계: 점수 수집 ---
     print("\n미리 계산된 임베딩으로 거리를 계산합니다...")
     pos_distances, pos_labels = collect_scores_from_embeddings(positive_pairs, embeddings, is_positive=True)
     neg_distances, neg_labels = collect_scores_from_embeddings(negative_pairs, embeddings, is_positive=False)
@@ -210,14 +218,22 @@ def main(args):
         logging.error(msg)
 
 if __name__ == "__main__":
+    # CUDA와 multiprocessing 충돌 방지를 위해 'spawn' 시작 방식 사용
+    # 메인 스크립트가 실행될 때 단 한 번만 호출되어야 합니다.
+    try:
+        multiprocessing.set_start_method('spawn', force=True)
+    except RuntimeError:
+        # 컨텍스트가 이미 설정된 경우 RuntimeError가 발생할 수 있으므로 무시합니다.
+        pass
+
     parser = argparse.ArgumentParser(description="Face Recognition Evaluation Script")
-    parser.add_argument("--data_path", type=str, default="/home/ubuntu/Face-Recognition/backup/01.Recognition", help="평가할 데이터셋의 루트 폴더")
+    parser.add_argument("--data_path", type=str, default="/home/ubuntu/Face-Recognition/deep_face/dataset/ms1m-arcface", help="평가할 데이터셋의 루트 폴더")
     parser.add_argument("--model_name", type=str, default="ArcFace", help="사용할 얼굴 인식 모델 (e.g., VGG-Face, Facenet, ArcFace)")
     parser.add_argument("--detector_backend", type=str, default="retinaface", help="사용할 얼굴 탐지 백엔드")
-    parser.add_argument("--excel_path", type=str, default="evaluation_results.xlsx", help="결과를 저장할 Excel 파일 이름")
+    parser.add_argument("--excel_path", type=str, default="multi_deepface.xlsx", help="결과를 저장할 Excel 파일 이름")
     parser.add_argument("--target_fars", nargs='+', type=float, default=[0.01, 0.001, 0.0001], help="TAR을 계산할 FAR 목표값들")
-    parser.add_argument("--no-cache", action="store_true", help="이 플래그를 사용하면 기존 임베딩 캐시를 무시하고 새로 추출합니다.")
-    parser.add_argument("--plot-roc", action="store_true", help="이 플래그를 사용하면 ROC 커브 그래프를 파일로 저장합니다.")
+    parser.add_argument("--no-cache", action="store_true", help="이 플래그를 사용하면 기존 임베딩 캐시를 무시하고 새로 추출합니다.", default=False)
+    parser.add_argument("--plot-roc", action="store_true", help="이 플래그를 사용하면 ROC 커브 그래프를 파일로 저장합니다." , default=True)
     args = parser.parse_args()
 
     try:

@@ -203,7 +203,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Single-Process Face Recognition Evaluation Script")
-    parser.add_argument("--data_path", type=str, default="/home/ubuntu/Face-Recognition/backup/01.Recognition", help="평가할 데이터셋의 루트 폴더")
+    parser.add_argument("--data_path", type=str, default="/home/ubuntu/Face-Recognition/deep_face/dataset/ms1m-arcface", help="평가할 데이터셋의 루트 폴더")
     parser.add_argument("--model_name", type=str, default="ArcFace", help="사용할 얼굴 인식 모델 (e.g., VGG-Face, Facenet, ArcFace)")
     parser.add_argument("--detector_backend", type=str, default="retinaface", help="사용할 얼굴 탐지 백엔드")
     parser.add_argument("--excel_path", type=str, default="single_evaluation_results.xlsx", help="결과를 저장할 Excel 파일 이름")
