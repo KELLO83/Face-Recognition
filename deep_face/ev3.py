@@ -10,7 +10,7 @@ import logging
 import traceback
 import pickle
 import argparse
-from deepface.commons import distance as dst
+from scipy.spatial.distance import cosine
 import matplotlib.pyplot as plt
 from multiprocessing import Pool, cpu_count
 
@@ -78,7 +78,7 @@ def collect_scores_from_embeddings(pairs, embeddings, is_positive):
     for img1_path, img2_path in tqdm(pairs, desc=desc):
         emb1, emb2 = embeddings.get(img1_path), embeddings.get(img2_path)
         if emb1 is not None and emb2 is not None:
-            distances.append(dst.findCosineDistance(emb1, emb2))
+            distances.append(cosine(emb1, emb2))
             labels.append(label)
     return distances, labels
 
