@@ -38,10 +38,10 @@ def represent_image(img_path, model_name, detector_backend):
             img_path=img_path, model_name=model_name,
             detector_backend=detector_backend, enforce_detection=False
         )
-        return img_path, embedding_obj[0]['embedding']
+        return img_path, embedding_obj[0]['embedding'], None
     except Exception as e:
-        logging.warning(f"임베딩 추출 오류: {img_path}. 제외됩니다. 오류: {e}")
-        return img_path, None
+        error_message = f"임베딩 추출 오류: {img_path}. 제외됩니다. 오류: {e}"
+        return img_path, None, error_message
 
 def get_all_embeddings(identity_map, model_name, detector_backend, dataset_name, use_cache=True):
     """임베딩을 추출하거나 캐시에서 로드 (병렬 처리 기능 추가)"""
@@ -64,7 +64,9 @@ def get_all_embeddings(identity_map, model_name, detector_backend, dataset_name,
     with Pool(processes=max(1, cpu_count() - 1)) as pool:
         results = list(tqdm(pool.starmap(represent_image, args_list), total=len(all_images), desc="임베딩 추출"))
 
-    for img_path, embedding in results:
+    for img_path, embedding, error_message in results:
+        if error_message:
+            logging.warning(error_message)
         embeddings[img_path] = embedding
 
     if use_cache:
