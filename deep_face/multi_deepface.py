@@ -14,6 +14,7 @@ from scipy.spatial.distance import cosine
 import matplotlib.pyplot as plt
 import multiprocessing
 from multiprocessing import Pool, cpu_count
+from concurrent.futures import ProcessPoolExecutor
 from insightface.app.face_analysis import FaceAnalysis
 
 
@@ -31,6 +32,29 @@ logging.basicConfig(
 )
 
 # --- 병렬 처리를 위한 전역 함수 ---
+
+def init_worker(model_name):
+    """
+    각 워커 프로세스를 위한 초기화 함수.
+    메인 프로세스의 TensorFlow 경고를 피하기 위해 모델을 각 워커에서 개별적으로 빌드하고,
+    GPU 메모리 설정을 통해 리소스 충돌을 방지합니다.
+    """
+    import tensorflow as tf
+    
+    # 각 프로세스가 필요한 만큼만 GPU 메모리를 할당하도록 설정
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        try:
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+        except RuntimeError as e:
+            # 메모리 성장은 프로그램 시작 시에만 설정할 수 있으므로, 이미 설정된 경우의 오류는 무시합니다.
+            # 이 단계에서는 logging 대신 print를 사용하여 잠재적인 교착 상태를 방지합니다.
+            print(f"Worker init warning: Could not set memory growth. Reason: {e}")
+
+    # 이 함수는 각 워커 프로세스에서 한 번씩 호출됩니다.
+    DeepFace.build_model(model_name)
+
 def represent_image(img_path, model_name, detector_backend):
     """DeepFace.represent를 병렬 처리에서 사용하기 위한 래퍼 함수"""
     try:
@@ -57,12 +81,17 @@ def get_all_embeddings(identity_map, model_name, detector_backend, dataset_name,
     all_images = sorted(list(set(itertools.chain.from_iterable(identity_map.values()))))
     print(f"\n총 {len(all_images)}개의 이미지에 대해 임베딩을 새로 추출합니다 (병렬 처리 사용)...")
     
-    args_list = [(img, model_name, detector_backend) for img in all_images]
     embeddings = {}
     
-    # 시스템 부하를 고려하여 CPU 코어 수 - 1 만큼의 프로세스 사용
-    with Pool(processes=max(1, cpu_count() - 1)) as pool:
-        results = list(tqdm(pool.starmap(represent_image, args_list), total=len(all_images), desc="임베딩 추출"))
+    # ProcessPoolExecutor를 사용하여 병렬 처리
+    with ProcessPoolExecutor(max_workers=max(1, cpu_count() - 1), initializer=init_worker, initargs=(model_name,)) as executor:
+        # 각 이미지에 대한 작업을 제출합니다.
+        futures = [executor.submit(represent_image, img, model_name, detector_backend) for img in all_images]
+        
+        # tqdm을 사용하여 진행 상황을 표시합니다.
+        results = []
+        for future in tqdm(futures, total=len(all_images), desc="임베딩 추출"):
+            results.append(future.result())
 
     for img_path, embedding, error_message in results:
         if error_message:
@@ -154,43 +183,41 @@ def generate_evaluation_pairs_parallel(identity_map):
     
     num_cores = max(1, cpu_count() - 1)
     
-    # --- 동일 인물 쌍 병렬 생성 ---
-    identity_items = list(identity_map.items())
-    chunk_size = int(np.ceil(len(identity_items) / num_cores))
-    chunks = [identity_items[i:i + chunk_size] for i in range(0, len(identity_items), chunk_size)]
-    
-    with Pool(processes=num_cores) as pool:
-        results = list(tqdm(pool.imap(generate_positive_pairs_worker, chunks), total=len(chunks), desc="동일 인물 쌍 생성"))
-    
-    positive_pairs = list(itertools.chain.from_iterable(results))
-    num_positive_pairs = len(positive_pairs)
-
-    # --- 다른 인물 쌍 병렬 생성 (수정됨) ---
-    identities = list(identity_map.keys())
-    negative_pairs = []
-    if len(identities) > 1:
-        # 모든 가능한 다른 인물 ID 쌍 생성
-        all_negative_identity_pairs = list(itertools.combinations(identities, 2))
+    with ProcessPoolExecutor(max_workers=num_cores) as executor:
+        # --- 동일 인물 쌍 병렬 생성 ---
+        identity_items = list(identity_map.items())
+        chunk_size = int(np.ceil(len(identity_items) / num_cores))
+        chunks = [identity_items[i:i + chunk_size] for i in range(0, len(identity_items), chunk_size)]
         
-        # 동일 인물 쌍 수에 맞춰 랜덤 샘플링
-        if len(all_negative_identity_pairs) > num_positive_pairs:
-            identity_pairs_to_process = random.sample(all_negative_identity_pairs, num_positive_pairs)
-        else:
-            identity_pairs_to_process = all_negative_identity_pairs
-
-        # 작업을 코어 수에 맞게 분할
-        chunk_size = int(np.ceil(len(identity_pairs_to_process) / num_cores))
-        chunks = [identity_pairs_to_process[i:i+chunk_size] for i in range(0, len(identity_pairs_to_process), chunk_size)]
-        args_list = [(chunk, identity_map) for chunk in chunks]
-
-        with Pool(processes=num_cores) as pool:
-            results = list(tqdm(pool.imap(generate_negative_pairs_worker, args_list), total=len(args_list), desc="다른 인물 쌍 생성"))
+        futures = [executor.submit(generate_positive_pairs_worker, chunk) for chunk in chunks]
+        results = [future.result() for future in tqdm(futures, total=len(chunks), desc="동일 인물 쌍 생성")]
         
-        # 중복 제거 후 최종 리스트 생성
-        negative_pairs_set = set(itertools.chain.from_iterable(results))
-        negative_pairs = list(negative_pairs_set)
+        positive_pairs = list(itertools.chain.from_iterable(results))
+        num_positive_pairs = len(positive_pairs)
+
+        # --- 다른 인물 쌍 병렬 생성 (수정됨) ---
+        identities = list(identity_map.keys())
+        negative_pairs = []
+        if len(identities) > 1:
+            all_negative_identity_pairs = list(itertools.combinations(identities, 2))
+            
+            if len(all_negative_identity_pairs) > num_positive_pairs:
+                identity_pairs_to_process = random.sample(all_negative_identity_pairs, num_positive_pairs)
+            else:
+                identity_pairs_to_process = all_negative_identity_pairs
+
+            chunk_size = int(np.ceil(len(identity_pairs_to_process) / num_cores))
+            chunks = [identity_pairs_to_process[i:i+chunk_size] for i in range(0, len(identity_pairs_to_process), chunk_size)]
+            args_list = [(chunk, identity_map) for chunk in chunks]
+
+            futures = [executor.submit(generate_negative_pairs_worker, args) for args in args_list]
+            results = [future.result() for future in tqdm(futures, total=len(args_list), desc="다른 인물 쌍 생성")]
+            
+            negative_pairs_set = set(itertools.chain.from_iterable(results))
+            negative_pairs = list(negative_pairs_set)
 
     return positive_pairs, negative_pairs
+
 
 def main(args):
     # --- 1단계: 데이터셋 스캔 ---
@@ -213,10 +240,8 @@ def main(args):
     positive_pairs, negative_pairs = generate_evaluation_pairs_parallel(identity_map)
     print(f"- 동일 인물 쌍: {len(positive_pairs)}개, 다른 인물 쌍: {len(negative_pairs)}개")
 
-    # --- 3단계: 모델 빌드 ---
-    print(f"\n모델({args.model_name})을 빌드하고 GPU에 로드합니다...")
-    DeepFace.build_model(args.model_name)
-    print("모델이 성공적으로 빌드되었습니다.")
+    # --- 3단계: 모델 빌드 (각 워커에서 수행되도록 변경) ---
+    print(f"\n모델({args.model_name})은 각 병렬 워커에서 빌드됩니다.")
 
     # --- 4단계: 임베딩 추출 또는 캐시 로드 ---
     dataset_name = os.path.basename(os.path.normpath(args.data_path))

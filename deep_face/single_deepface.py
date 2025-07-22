@@ -127,7 +127,7 @@ def main(args):
 
     # --- 2단계: 평가 쌍 생성 ---
     print("\n평가에 사용할 동일 인물/다른 인물 쌍을 생성합니다...")
-    positive_pairs = [p for imgs in identity_map.values() for p in itertools.combinations(imgs, 2)]
+    positive_pairs = [p for imgs in identity_map.values() for p in tqdm(itertools.combinations(imgs, 2))]
     num_positive_pairs = len(positive_pairs)
     
     identities = list(identity_map.keys())
