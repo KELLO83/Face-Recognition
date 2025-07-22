@@ -12,6 +12,33 @@ import pickle
 import argparse
 from scipy.spatial.distance import cosine
 import matplotlib.pyplot as plt
+import multiprocessing
+
+# --- 멀티프로세싱을 위한 워커 함수 ---
+def _generate_negative_pairs_worker(args):
+    """Helper function for multiprocessing to generate negative pairs."""
+    num_pairs, identity_map, identities, worker_id = args
+    # 각 워커에 대해 고유한 난수 시드 설정
+    random.seed(os.getpid() + worker_id)
+    
+    pairs = set()
+    # 작은 데이터셋에서 무한 루프 방지
+    max_attempts = num_pairs * 5 
+    attempts = 0
+    if len(identities) < 2:
+        return pairs
+
+    while len(pairs) < num_pairs and attempts < max_attempts:
+        # 두 개의 다른 ID를 샘플링
+        id1, id2 = random.sample(identities, 2)
+        # 각 ID에서 임의의 이미지 선택
+        img1 = random.choice(identity_map[id1])
+        img2 = random.choice(identity_map[id2])
+        # 경로를 정렬하여 쌍의 고유성 보장
+        pair = tuple(sorted((img1, img2)))
+        pairs.add(pair)
+        attempts += 1
+    return pairs
 
 # --- 로깅 및 경로 설정 ---
 try:
@@ -145,18 +172,37 @@ def main(args):
 
     # --- 2단계: 평가 쌍 생성 ---
     print("\n평가에 사용할 동일 인물/다른 인물 쌍을 생성합니다...")
-    positive_pairs = [p for imgs in identity_map.values() for p in tqdm(itertools.combinations(imgs, 2))]
+    
+    positive_pairs = []
+    for imgs in tqdm(identity_map.values(), desc="동일 인물 쌍 생성"):
+        positive_pairs.extend(itertools.combinations(imgs, 2))
+
     num_positive_pairs = len(positive_pairs)
     
     identities = list(identity_map.keys())
     negative_pairs_set = set()
     if len(identities) > 1:
-        while len(negative_pairs_set) < num_positive_pairs:
-            id1, id2 = random.sample(identities, 2)
-            pair = (random.choice(identity_map[id1]), random.choice(identity_map[id2]))
-            sorted_pair = tuple(sorted(pair))
-            negative_pairs_set.add(sorted_pair)
-    negative_pairs = list(negative_pairs_set)
+        num_workers = min(multiprocessing.cpu_count(), 8)  # 최대 8개 코어 사용 또는 CPU 코어 수
+        pairs_per_worker = (num_positive_pairs // num_workers) + 1
+        
+        pool_args = [(pairs_per_worker, identity_map, identities, i) for i in range(num_workers)]
+
+        print(f"\n{num_workers}개의 워커를 사용하여 다른 인물 쌍을 병렬로 생성합니다...")
+        with multiprocessing.Pool(processes=num_workers) as pool:
+            # imap_unordered는 작업이 완료되는 대로 결과를 반환하여 메모리 효율적
+            results = pool.imap_unordered(_generate_negative_pairs_worker, pool_args)
+            
+            with tqdm(total=num_positive_pairs, desc="다른 인물 쌍 생성") as pbar:
+                for worker_pairs in results:
+                    new_pairs_added = len(worker_pairs - negative_pairs_set)
+                    negative_pairs_set.update(worker_pairs)
+                    
+                    # tqdm 진행률을 업데이트하되, 목표치를 초과하지 않도록 함
+                    current_progress = min(len(negative_pairs_set), num_positive_pairs)
+                    pbar.update(current_progress - pbar.n)
+
+    # 최종적으로 필요한 만큼만 쌍을 선택
+    negative_pairs = random.sample(list(negative_pairs_set), min(len(negative_pairs_set), num_positive_pairs))
 
     print(f"- 동일 인물 쌍: {len(positive_pairs)}개, 다른 인물 쌍: {len(negative_pairs)}개")
 

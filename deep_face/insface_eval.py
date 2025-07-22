@@ -25,7 +25,7 @@ LOG_FILE = os.path.join(script_dir, "insface_log.txt")
 
 logging.basicConfig(
     filename=LOG_FILE, level=logging.WARNING,
-    format='%(asctime)s - %(levelname)s - %(message)s', filemode='w'
+    format='%(a평가에sctime)s - %(levelname)s - %(message)s', filemode='w'
 )
 
 # --- 병렬 처리를 위한 전역 모델 및 초기화 함수 ---

@@ -13,19 +13,19 @@ import argparse
 from scipy.spatial.distance import cosine
 import matplotlib.pyplot as plt
 
-# --- 로깅 및 경로 설정 ---
+
 try:
     script_dir = os.path.dirname(os.path.abspath(__file__))
 except NameError:
     script_dir = os.getcwd()
-LOG_FILE = os.path.join(script_dir, "single_log.txt")
+LOG_FILE = os.path.join(script_dir, "single_deepface.txt")
 
 logging.basicConfig(
     filename=LOG_FILE, level=logging.WARNING,
     format='%(asctime)s - %(levelname)s - %(message)s', filemode='w'
 )
 
-def get_all_embeddings(identity_map, model, model_name, detector_backend, dataset_name, use_cache=True, batch_size=2048):
+def get_all_embeddings(identity_map, model, model_name, detector_backend, dataset_name, use_cache=True, batch_size=10240):
     """임베딩을 추출하거나 캐시에서 로드 (배치 처리 기능 추가)"""
     cache_file = os.path.join(script_dir, f"embeddings_cache_{dataset_name}_{model_name}_single_batch.pkl")
     
@@ -43,21 +43,23 @@ def get_all_embeddings(identity_map, model, model_name, detector_backend, datase
     
     for i in tqdm(range(0, len(all_images), batch_size), desc="임베딩 추출"):
         batch_paths = all_images[i:i+batch_size]
-        try:
-            # 여러 이미지를 한 번에 처리
+        try: 
+
             embedding_objs = DeepFace.represent(
                 img_path=batch_paths, 
                 model_name=model_name,
-                model=model,  # 미리 로드된 모델 사용
                 detector_backend=detector_backend, 
-                enforce_detection=False
+                enforce_detection=False,
+                normalization='ArcFace',
+                align=True,
             )
-            # 결과 저장
+
             for path, obj in zip(batch_paths, embedding_objs):
-                embeddings[path] = obj['embedding']
+                embeddings[path] = obj['embedding']  
+
         except Exception as e:
             logging.warning(f"배치 처리 중 오류 발생 ({i}번째 배치): {e}")
-            # 오류 발생 시, 해당 배치를 개별적으로 재시도
+
             for img_path in batch_paths:
                 try:
                     embedding_obj = DeepFace.represent(
@@ -77,7 +79,6 @@ def get_all_embeddings(identity_map, model, model_name, detector_backend, datase
     return embeddings
 
 def collect_scores_from_embeddings(pairs, embeddings, is_positive):
-    """임베딩으로 거리를 계산합니다."""
     distances, labels = [], []
     label = 1 if is_positive else 0
     desc = "동일 인물 쌍 계산" if is_positive else "다른 인물 쌍 계산"
@@ -180,13 +181,12 @@ def main(args):
     pos_distances, pos_labels = collect_scores_from_embeddings(positive_pairs, embeddings, is_positive=True)
     neg_distances, neg_labels = collect_scores_from_embeddings(negative_pairs, embeddings, is_positive=False)
     distances = np.array(pos_distances + neg_distances)
-    labels = np.array(pos_labels + neg_labels)
+    labels = np.array(pos_labels + neg_labels) 
 
-    # --- 6단계: 최종 평가 및 결과 저장 ---
     print("\n--- 최종 평가 결과 ---")
     if labels.size > 0:
         scores = -distances
-        fpr, tpr, thresholds = roc_curve(labels, scores)
+        fpr, tpr, thresholds = roc_curve(labels, scores) # Roc 커브 계산
         roc_auc = auc(fpr, tpr)
         frr = 1 - tpr
         eer_index = np.nanargmin(np.abs(fpr - frr))
@@ -232,7 +232,7 @@ if __name__ == "__main__":
     parser.add_argument("--detector_backend", type=str, default="retinaface", help="사용할 얼굴 탐지 백엔드")
     parser.add_argument("--excel_path", type=str, default="single_evaluation_results.xlsx", help="결과를 저장할 Excel 파일 이름")
     parser.add_argument("--target_fars", nargs='+', type=float, default=[0.01, 0.001, 0.0001], help="TAR을 계산할 FAR 목표값들")
-    parser.add_argument("--batch_size", type=int, default=2048, help="임베딩 추출 시 사용할 배치 크기")
+    parser.add_argument("--batch_size", type=int, default=10240, help="임베딩 추출 시 사용할 배치 크기")
     parser.add_argument("--no-cache", action="store_true", help="이 플래그를 사용하면 기존 임베딩 캐시를 무시하고 새로 추출합니다.")
     parser.add_argument("--plot-roc", action="store_true", help="이 플래그를 사용하면 ROC 커브 그래프를 파일로 저장합니다.", default=True)
     args = parser.parse_args()
