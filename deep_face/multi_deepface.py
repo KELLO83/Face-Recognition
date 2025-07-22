@@ -124,6 +124,72 @@ def plot_roc_curve(fpr, tpr, roc_auc, model_name, excel_path):
     plt.savefig(plot_filename)
     print(f"ROC 커브 그래프가 '{plot_filename}' 파일로 저장되었습니다.")
 
+# --- 병렬 쌍 생성을 위한 워커 함수 ---
+def generate_positive_pairs_worker(identity_items):
+    """워커 프로세스를 위한 동일 인물 쌍 생성 함수"""
+    pairs = []
+    for _, imgs in identity_items:
+        if len(imgs) > 1:
+            pairs.extend(itertools.combinations(imgs, 2))
+    return pairs
+
+def generate_negative_pairs_worker(args):
+    """워커 프로세스를 위한 다른 인물 쌍 생성 함수"""
+    identity_pairs_chunk, identity_map = args
+    generated_pairs = set()
+    for id1, id2 in identity_pairs_chunk:
+        try:
+            pair = (random.choice(identity_map[id1]), random.choice(identity_map[id2]))
+            sorted_pair = tuple(sorted(pair))
+            generated_pairs.add(sorted_pair)
+        except IndexError:
+            pass
+    return list(generated_pairs)
+
+def generate_evaluation_pairs_parallel(identity_map):
+    """병렬 처리를 사용하여 평가 쌍을 생성합니다."""
+    print("\n평가에 사용할 동일 인물/다른 인물 쌍을 병렬로 생성합니다...")
+    
+    num_cores = max(1, cpu_count() - 1)
+    
+    # --- 동일 인물 쌍 병렬 생성 ---
+    identity_items = list(identity_map.items())
+    chunk_size = int(np.ceil(len(identity_items) / num_cores))
+    chunks = [identity_items[i:i + chunk_size] for i in range(0, len(identity_items), chunk_size)]
+    
+    with Pool(processes=num_cores) as pool:
+        results = list(tqdm(pool.imap(generate_positive_pairs_worker, chunks), total=len(chunks), desc="동일 인물 쌍 생성"))
+    
+    positive_pairs = list(itertools.chain.from_iterable(results))
+    num_positive_pairs = len(positive_pairs)
+
+    # --- 다른 인물 쌍 병렬 생성 (수정됨) ---
+    identities = list(identity_map.keys())
+    negative_pairs = []
+    if len(identities) > 1:
+        # 모든 가능한 다른 인물 ID 쌍 생성
+        all_negative_identity_pairs = list(itertools.combinations(identities, 2))
+        
+        # 동일 인물 쌍 수에 맞춰 랜덤 샘플링
+        if len(all_negative_identity_pairs) > num_positive_pairs:
+            identity_pairs_to_process = random.sample(all_negative_identity_pairs, num_positive_pairs)
+        else:
+            identity_pairs_to_process = all_negative_identity_pairs
+
+        # 작업을 코어 수에 맞게 분할
+        chunk_size = int(np.ceil(len(identity_pairs_to_process) / num_cores))
+        chunks = [identity_pairs_to_process[i:i+chunk_size] for i in range(0, len(identity_pairs_to_process), chunk_size)]
+        args_list = [(chunk, identity_map) for chunk in chunks]
+
+        with Pool(processes=num_cores) as pool:
+            results = list(tqdm(pool.imap(generate_negative_pairs_worker, args_list), total=len(args_list), desc="다른 인물 쌍 생성"))
+        
+        # 중복 제거 후 최종 리스트 생성
+        negative_pairs_set = set(itertools.chain.from_iterable(results))
+        negative_pairs = list(negative_pairs_set)
+
+    return positive_pairs, negative_pairs
+
 def main(args):
     # --- 1단계: 데이터셋 스캔 ---
     if not os.path.isdir(args.data_path):
@@ -141,21 +207,8 @@ def main(args):
         raise ValueError("데이터셋에서 2개 이상의 이미지를 가진 인물을 찾지 못했습니다.")
     print(f"총 {len(identity_map)}명의 인물, {sum(len(v) for v in identity_map.values())}개의 이미지를 찾았습니다.")
 
-    # --- 2단계: 평가 쌍 생성 (최적화) ---
-    print("\n평가에 사용할 동일 인물/다른 인물 쌍을 생성합니다...")
-    positive_pairs = [p for imgs in identity_map.values() for p in itertools.combinations(imgs, 2)]
-    num_positive_pairs = len(positive_pairs)
-    
-    identities = list(identity_map.keys())
-    negative_pairs_set = set()
-    if len(identities) > 1:
-        while len(negative_pairs_set) < num_positive_pairs:
-            id1, id2 = random.sample(identities, 2)
-            pair = (random.choice(identity_map[id1]), random.choice(identity_map[id2]))
-            sorted_pair = tuple(sorted(pair))
-            negative_pairs_set.add(sorted_pair)
-    negative_pairs = list(negative_pairs_set)
-
+    # --- 2단계: 평가 쌍 생성 (병렬 처리) ---
+    positive_pairs, negative_pairs = generate_evaluation_pairs_parallel(identity_map)
     print(f"- 동일 인물 쌍: {len(positive_pairs)}개, 다른 인물 쌍: {len(negative_pairs)}개")
 
     # --- 3단계: 모델 빌드 ---
