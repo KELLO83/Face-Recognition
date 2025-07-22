@@ -12,40 +12,22 @@ import pickle
 import argparse
 from scipy.spatial.distance import cosine
 import matplotlib.pyplot as plt
-import multiprocessing
-from multiprocessing import Pool, cpu_count
-from insightface.app.face_analysis import FaceAnalysis
-
-
 
 # --- 로깅 및 경로 설정 ---
 try:
     script_dir = os.path.dirname(os.path.abspath(__file__))
 except NameError:
     script_dir = os.getcwd()
-LOG_FILE = os.path.join(script_dir, "log.txt")
+LOG_FILE = os.path.join(script_dir, "single_log.txt")
 
 logging.basicConfig(
     filename=LOG_FILE, level=logging.WARNING,
     format='%(asctime)s - %(levelname)s - %(message)s', filemode='w'
 )
 
-# --- 병렬 처리를 위한 전역 함수 ---
-def represent_image(img_path, model_name, detector_backend):
-    """DeepFace.represent를 병렬 처리에서 사용하기 위한 래퍼 함수"""
-    try:
-        embedding_obj = DeepFace.represent(
-            img_path=img_path, model_name=model_name,
-            detector_backend=detector_backend, enforce_detection=False
-        )
-        return img_path, embedding_obj[0]['embedding']
-    except Exception as e:
-        logging.warning(f"임베딩 추출 오류: {img_path}. 제외됩니다. 오류: {e}")
-        return img_path, None
-
 def get_all_embeddings(identity_map, model_name, detector_backend, dataset_name, use_cache=True):
-    """임베딩을 추출하거나 캐시에서 로드 (병렬 처리 기능 추가)"""
-    cache_file = os.path.join(script_dir, f"embeddings_cache_{dataset_name}_{model_name}.pkl")
+    """임베딩을 추출하거나 캐시에서 로드 (단일 프로세스)"""
+    cache_file = os.path.join(script_dir, f"embeddings_cache_{dataset_name}_{model_name}_single.pkl")
     
     if use_cache and os.path.exists(cache_file):
         print(f"\n캐시 파일 '{cache_file}'에서 임베딩을 로드합니다...")
@@ -55,17 +37,19 @@ def get_all_embeddings(identity_map, model_name, detector_backend, dataset_name,
         return embeddings
 
     all_images = sorted(list(set(itertools.chain.from_iterable(identity_map.values()))))
-    print(f"\n총 {len(all_images)}개의 이미지에 대해 임베딩을 새로 추출합니다 (병렬 처리 사용)...")
+    print(f"\n총 {len(all_images)}개의 이미지에 대해 임베딩을 새로 추출합니다 (단일 프로세스)...")
     
-    args_list = [(img, model_name, detector_backend) for img in all_images]
     embeddings = {}
-    
-    # 시스템 부하를 고려하여 CPU 코어 수 - 1 만큼의 프로세스 사용
-    with Pool(processes=max(1, cpu_count() - 1)) as pool:
-        results = list(tqdm(pool.starmap(represent_image, args_list), total=len(all_images), desc="임베딩 추출"))
-
-    for img_path, embedding in results:
-        embeddings[img_path] = embedding
+    for img_path in tqdm(all_images, desc="임베딩 추출"):
+        try:
+            embedding_obj = DeepFace.represent(
+                img_path=img_path, model_name=model_name,
+                detector_backend=detector_backend, enforce_detection=False
+            )
+            embeddings[img_path] = embedding_obj[0]['embedding']
+        except Exception as e:
+            logging.warning(f"임베딩 추출 오류: {img_path}. 제외됩니다. 오류: {e}")
+            embeddings[img_path] = None
 
     if use_cache:
         print(f"\n추출된 임베딩을 캐시 파일 '{cache_file}'에 저장합니다...")
@@ -141,7 +125,7 @@ def main(args):
         raise ValueError("데이터셋에서 2개 이상의 이미지를 가진 인물을 찾지 못했습니다.")
     print(f"총 {len(identity_map)}명의 인물, {sum(len(v) for v in identity_map.values())}개의 이미지를 찾았습니다.")
 
-    # --- 2단계: 평가 쌍 생성 (최적화) ---
+    # --- 2단계: 평가 쌍 생성 ---
     print("\n평가에 사용할 동일 인물/다른 인물 쌍을 생성합니다...")
     positive_pairs = [p for imgs in identity_map.values() for p in itertools.combinations(imgs, 2)]
     num_positive_pairs = len(positive_pairs)
@@ -202,7 +186,7 @@ def main(args):
         metrics = {"accuracy": accuracy, "recall": recall, "f1_score": f1_score, "tp": tp, "tn": tn, "fp": fp, "fn": fn}
 
         print(f"사용된 모델: {args.model_name}, 전체 평가 쌍: {len(labels)} 개")
-        print(f"[주요 성능] ROC-AUC: {roc_auc:.4f}, EER: {eer:.4f} (거리 임계값: {eer_threshold:.4f}) ")
+        print(f"[주요 성능] ROC-AUC: {roc_auc:.4f}, EER: {eer:.4f} (거리 임계값: {eer_threshold:.4f})")
         print(f"[상세 지표] Accuracy: {metrics['accuracy']:.4f}, Recall: {metrics['recall']:.4f}, F1-Score: {metrics['f1_score']:.4f}")
         for far, tar in tar_at_far_results.items():
             print(f"  - TAR @ FAR {far*100:g}%: {tar:.4f}")
@@ -218,22 +202,14 @@ def main(args):
         logging.error(msg)
 
 if __name__ == "__main__":
-    # CUDA와 multiprocessing 충돌 방지를 위해 'spawn' 시작 방식 사용
-    # 메인 스크립트가 실행될 때 단 한 번만 호출되어야 합니다.
-    try:
-        multiprocessing.set_start_method('spawn', force=True)
-    except RuntimeError:
-        # 컨텍스트가 이미 설정된 경우 RuntimeError가 발생할 수 있으므로 무시합니다.
-        pass
-
-    parser = argparse.ArgumentParser(description="Face Recognition Evaluation Script")
-    parser.add_argument("--data_path", type=str, default="/home/ubuntu/Face-Recognition/deep_face/dataset/ms1m-arcface", help="평가할 데이터셋의 루트 폴더")
+    parser = argparse.ArgumentParser(description="Single-Process Face Recognition Evaluation Script")
+    parser.add_argument("--data_path", type=str, default="/home/ubuntu/Face-Recognition/backup/01.Recognition", help="평가할 데이터셋의 루트 폴더")
     parser.add_argument("--model_name", type=str, default="ArcFace", help="사용할 얼굴 인식 모델 (e.g., VGG-Face, Facenet, ArcFace)")
     parser.add_argument("--detector_backend", type=str, default="retinaface", help="사용할 얼굴 탐지 백엔드")
-    parser.add_argument("--excel_path", type=str, default="evaluation_results.xlsx", help="결과를 저장할 Excel 파일 이름")
+    parser.add_argument("--excel_path", type=str, default="single_evaluation_results.xlsx", help="결과를 저장할 Excel 파일 이름")
     parser.add_argument("--target_fars", nargs='+', type=float, default=[0.01, 0.001, 0.0001], help="TAR을 계산할 FAR 목표값들")
-    parser.add_argument("--no-cache", action="store_true", help="이 플래그를 사용하면 기존 임베딩 캐시를 무시하고 새로 추출합니다.", default=False)
-    parser.add_argument("--plot-roc", action="store_true", help="이 플래그를 사용하면 ROC 커브 그래프를 파일로 저장합니다." , default=True)
+    parser.add_argument("--no-cache", action="store_true", help="이 플래그를 사용하면 기존 임베딩 캐시를 무시하고 새로 추출합니다.")
+    parser.add_argument("--plot-roc", action="store_true", help="이 플래그를 사용하면 ROC 커브 그래프를 파일로 저장합니다.", default=True)
     args = parser.parse_args()
 
     try:
