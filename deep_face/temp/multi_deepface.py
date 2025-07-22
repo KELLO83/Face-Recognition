@@ -12,22 +12,64 @@ import pickle
 import argparse
 from scipy.spatial.distance import cosine
 import matplotlib.pyplot as plt
+import multiprocessing
+from multiprocessing import Pool, cpu_count
+from concurrent.futures import ProcessPoolExecutor
+from insightface.app.face_analysis import FaceAnalysis
+
+
 
 # --- 로깅 및 경로 설정 ---
 try:
     script_dir = os.path.dirname(os.path.abspath(__file__))
 except NameError:
     script_dir = os.getcwd()
-LOG_FILE = os.path.join(script_dir, "single_log.txt")
+LOG_FILE = os.path.join(script_dir, "log.txt")
 
 logging.basicConfig(
     filename=LOG_FILE, level=logging.WARNING,
     format='%(asctime)s - %(levelname)s - %(message)s', filemode='w'
 )
 
-def get_all_embeddings(identity_map, model, model_name, detector_backend, dataset_name, use_cache=True, batch_size=2048):
-    """임베딩을 추출하거나 캐시에서 로드 (배치 처리 기능 추가)"""
-    cache_file = os.path.join(script_dir, f"embeddings_cache_{dataset_name}_{model_name}_single_batch.pkl")
+# --- 병렬 처리를 위한 전역 함수 ---
+
+def init_worker(model_name):
+    """
+    각 워커 프로세스를 위한 초기화 함수.
+    메인 프로세스의 TensorFlow 경고를 피하기 위해 모델을 각 워커에서 개별적으로 빌드하고,
+    GPU 메모리 설정을 통해 리소스 충돌을 방지합니다.
+    """
+    import tensorflow as tf
+    
+    # 각 프로세스가 필요한 만큼만 GPU 메모리를 할당하도록 설정
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        try:
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+        except RuntimeError as e:
+            # 메모리 성장은 프로그램 시작 시에만 설정할 수 있으므로, 이미 설정된 경우의 오류는 무시합니다.
+            # 이 단계에서는 logging 대신 print를 사용하여 잠재적인 교착 상태를 방지합니다.
+            print(f"Worker init warning: Could not set memory growth. Reason: {e}")
+
+    # 이 함수는 각 워커 프로세스에서 한 번씩 호출됩니다.
+    DeepFace.build_model(model_name)
+
+def represent_image(img_path, model_name, detector_backend):
+    """DeepFace.represent를 병렬 처리에서 사용하기 위한 래퍼 함수"""
+    try:
+        embedding_obj = DeepFace.represent(
+            img_path=img_path, model_name=model_name,
+            detector_backend=detector_backend, enforce_detection=False
+        )
+        return img_path, embedding_obj[0]['embedding'], None
+    except Exception as e:
+        error_message = f"임베딩 추출 오류: {img_path}. 제외됩니다. 오류: {e}"
+        return img_path, None, error_message
+
+def get_all_embeddings(identity_map, model_name, detector_backend, dataset_name, use_cache=True):
+    """임베딩을 추출하거나 캐시에서 로드 (병렬 처리 기능 추가)"""
+    cache_file = os.path.join(script_dir, f"embeddings_cache_{dataset_name}_{model_name}.pkl")
     
     if use_cache and os.path.exists(cache_file):
         print(f"\n캐시 파일 '{cache_file}'에서 임베딩을 로드합니다...")
@@ -37,37 +79,24 @@ def get_all_embeddings(identity_map, model, model_name, detector_backend, datase
         return embeddings
 
     all_images = sorted(list(set(itertools.chain.from_iterable(identity_map.values()))))
-    print(f"\n총 {len(all_images)}개의 이미지에 대해 임베딩을 새로 추출합니다 (배치 크기: {batch_size})...")
+    print(f"\n총 {len(all_images)}개의 이미지에 대해 임베딩을 새로 추출합니다 (병렬 처리 사용)...")
     
     embeddings = {}
     
-    for i in tqdm(range(0, len(all_images), batch_size), desc="임베딩 추출"):
-        batch_paths = all_images[i:i+batch_size]
-        try:
-            # 여러 이미지를 한 번에 처리
-            embedding_objs = DeepFace.represent(
-                img_path=batch_paths, 
-                model_name=model_name,
-                model=model,  # 미리 로드된 모델 사용
-                detector_backend=detector_backend, 
-                enforce_detection=False
-            )
-            # 결과 저장
-            for path, obj in zip(batch_paths, embedding_objs):
-                embeddings[path] = obj['embedding']
-        except Exception as e:
-            logging.warning(f"배치 처리 중 오류 발생 ({i}번째 배치): {e}")
-            # 오류 발생 시, 해당 배치를 개별적으로 재시도
-            for img_path in batch_paths:
-                try:
-                    embedding_obj = DeepFace.represent(
-                        img_path=img_path, model_name=model_name, model=model,
-                        detector_backend=detector_backend, enforce_detection=False
-                    )
-                    embeddings[img_path] = embedding_obj[0]['embedding']
-                except Exception as inner_e:
-                    logging.warning(f"개별 임베딩 추출 오류: {img_path}. 제외됩니다. 오류: {inner_e}")
-                    embeddings[img_path] = None
+    # ProcessPoolExecutor를 사용하여 병렬 처리
+    with ProcessPoolExecutor(max_workers=max(1, cpu_count() - 2), initializer=init_worker, initargs=(model_name,)) as executor:
+        # 각 이미지에 대한 작업을 제출합니다.
+        futures = [executor.submit(represent_image, img, model_name, detector_backend) for img in all_images]
+        
+        # tqdm을 사용하여 진행 상황을 표시합니다.
+        results = []
+        for future in tqdm(futures, total=len(all_images), desc="임베딩 추출"):
+            results.append(future.result())
+
+    for img_path, embedding, error_message in results:
+        if error_message:
+            logging.warning(error_message)
+        embeddings[img_path] = embedding
 
     if use_cache:
         print(f"\n추출된 임베딩을 캐시 파일 '{cache_file}'에 저장합니다...")
@@ -126,6 +155,70 @@ def plot_roc_curve(fpr, tpr, roc_auc, model_name, excel_path):
     plt.savefig(plot_filename)
     print(f"ROC 커브 그래프가 '{plot_filename}' 파일로 저장되었습니다.")
 
+# --- 병렬 쌍 생성을 위한 워커 함수 ---
+def generate_positive_pairs_worker(identity_items):
+    """워커 프로세스를 위한 동일 인물 쌍 생성 함수"""
+    pairs = []
+    for _, imgs in identity_items:
+        if len(imgs) > 1:
+            pairs.extend(itertools.combinations(imgs, 2))
+    return pairs
+
+def generate_negative_pairs_worker(args):
+    """워커 프로세스를 위한 다른 인물 쌍 생성 함수"""
+    identity_pairs_chunk, identity_map = args
+    generated_pairs = set()
+    for id1, id2 in identity_pairs_chunk:
+        try:
+            pair = (random.choice(identity_map[id1]), random.choice(identity_map[id2]))
+            sorted_pair = tuple(sorted(pair))
+            generated_pairs.add(sorted_pair)
+        except IndexError:
+            pass
+    return list(generated_pairs)
+
+def generate_evaluation_pairs_parallel(identity_map):
+    """병렬 처리를 사용하여 평가 쌍을 생성합니다."""
+    print("\n평가에 사용할 동일 인물/다른 인물 쌍을 병렬로 생성합니다...")
+    
+    num_cores = max(1, cpu_count() - 1)
+    
+    with ProcessPoolExecutor(max_workers=num_cores) as executor:
+        # --- 동일 인물 쌍 병렬 생성 ---
+        identity_items = list(identity_map.items())
+        chunk_size = int(np.ceil(len(identity_items) / num_cores))
+        chunks = [identity_items[i:i + chunk_size] for i in range(0, len(identity_items), chunk_size)]
+        
+        futures = [executor.submit(generate_positive_pairs_worker, chunk) for chunk in chunks]
+        results = [future.result() for future in tqdm(futures, total=len(chunks), desc="동일 인물 쌍 생성")]
+        
+        positive_pairs = list(itertools.chain.from_iterable(results))
+        num_positive_pairs = len(positive_pairs)
+
+        # --- 다른 인물 쌍 병렬 생성 (수정됨) ---
+        identities = list(identity_map.keys())
+        negative_pairs = []
+        if len(identities) > 1:
+            all_negative_identity_pairs = list(itertools.combinations(identities, 2))
+            
+            if len(all_negative_identity_pairs) > num_positive_pairs:
+                identity_pairs_to_process = random.sample(all_negative_identity_pairs, num_positive_pairs)
+            else:
+                identity_pairs_to_process = all_negative_identity_pairs
+
+            chunk_size = int(np.ceil(len(identity_pairs_to_process) / num_cores))
+            chunks = [identity_pairs_to_process[i:i+chunk_size] for i in range(0, len(identity_pairs_to_process), chunk_size)]
+            args_list = [(chunk, identity_map) for chunk in chunks]
+
+            futures = [executor.submit(generate_negative_pairs_worker, args) for args in args_list]
+            results = [future.result() for future in tqdm(futures, total=len(args_list), desc="다른 인물 쌍 생성")]
+            
+            negative_pairs_set = set(itertools.chain.from_iterable(results))
+            negative_pairs = list(negative_pairs_set)
+
+    return positive_pairs, negative_pairs
+
+
 def main(args):
     # --- 1단계: 데이터셋 스캔 ---
     if not os.path.isdir(args.data_path):
@@ -143,31 +236,16 @@ def main(args):
         raise ValueError("데이터셋에서 2개 이상의 이미지를 가진 인물을 찾지 못했습니다.")
     print(f"총 {len(identity_map)}명의 인물, {sum(len(v) for v in identity_map.values())}개의 이미지를 찾았습니다.")
 
-    # --- 2단계: 평가 쌍 생성 ---
-    print("\n평가에 사용할 동일 인물/다른 인물 쌍을 생성합니다...")
-    positive_pairs = [p for imgs in identity_map.values() for p in tqdm(itertools.combinations(imgs, 2))]
-    num_positive_pairs = len(positive_pairs)
-    
-    identities = list(identity_map.keys())
-    negative_pairs_set = set()
-    if len(identities) > 1:
-        while len(negative_pairs_set) < num_positive_pairs:
-            id1, id2 = random.sample(identities, 2)
-            pair = (random.choice(identity_map[id1]), random.choice(identity_map[id2]))
-            sorted_pair = tuple(sorted(pair))
-            negative_pairs_set.add(sorted_pair)
-    negative_pairs = list(negative_pairs_set)
-
+    # --- 2단계: 평가 쌍 생성 (병렬 처리) ---
+    positive_pairs, negative_pairs = generate_evaluation_pairs_parallel(identity_map)
     print(f"- 동일 인물 쌍: {len(positive_pairs)}개, 다른 인물 쌍: {len(negative_pairs)}개")
 
-    # --- 3단계: 모델 빌드 ---
-    print(f"\n모델({args.model_name})을 빌드하고 GPU에 로드합니다...")
-    model = DeepFace.build_model(args.model_name)
-    print("모델이 성공적으로 빌드되었습니다.")
+    # --- 3단계: 모델 빌드 (각 워커에서 수행되도록 변경) ---
+    print(f"\n모델({args.model_name})은 각 병렬 워커에서 빌드됩니다.")
 
     # --- 4단계: 임베딩 추출 또는 캐시 로드 ---
     dataset_name = os.path.basename(os.path.normpath(args.data_path))
-    embeddings = get_all_embeddings(identity_map, model, args.model_name, args.detector_backend, dataset_name, use_cache=not args.no_cache, batch_size=args.batch_size)
+    embeddings = get_all_embeddings(identity_map, args.model_name, args.detector_backend, dataset_name, use_cache=not args.no_cache)
 
     # --- 5단계: 점수 수집 ---
     print("\n미리 계산된 임베딩으로 거리를 계산합니다...")
@@ -204,7 +282,7 @@ def main(args):
         metrics = {"accuracy": accuracy, "recall": recall, "f1_score": f1_score, "tp": tp, "tn": tn, "fp": fp, "fn": fn}
 
         print(f"사용된 모델: {args.model_name}, 전체 평가 쌍: {len(labels)} 개")
-        print(f"[주요 성능] ROC-AUC: {roc_auc:.4f}, EER: {eer:.4f} (거리 임계값: {eer_threshold:.4f})")
+        print(f"[주요 성능] ROC-AUC: {roc_auc:.4f}, EER: {eer:.4f} (거리 임계값: {eer_threshold:.4f}) ")
         print(f"[상세 지표] Accuracy: {metrics['accuracy']:.4f}, Recall: {metrics['recall']:.4f}, F1-Score: {metrics['f1_score']:.4f}")
         for far, tar in tar_at_far_results.items():
             print(f"  - TAR @ FAR {far*100:g}%: {tar:.4f}")
@@ -220,15 +298,22 @@ def main(args):
         logging.error(msg)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Single-Process Face Recognition Evaluation Script")
+    # CUDA와 multiprocessing 충돌 방지를 위해 'spawn' 시작 방식 사용
+    # 메인 스크립트가 실행될 때 단 한 번만 호출되어야 합니다.
+    try:
+        multiprocessing.set_start_method('spawn', force=True)
+    except RuntimeError:
+        # 컨텍스트가 이미 설정된 경우 RuntimeError가 발생할 수 있으므로 무시합니다.
+        pass
+
+    parser = argparse.ArgumentParser(description="Face Recognition Evaluation Script")
     parser.add_argument("--data_path", type=str, default="/home/ubuntu/Face-Recognition/deep_face/dataset/ms1m-arcface", help="평가할 데이터셋의 루트 폴더")
     parser.add_argument("--model_name", type=str, default="ArcFace", help="사용할 얼굴 인식 모델 (e.g., VGG-Face, Facenet, ArcFace)")
     parser.add_argument("--detector_backend", type=str, default="retinaface", help="사용할 얼굴 탐지 백엔드")
-    parser.add_argument("--excel_path", type=str, default="single_evaluation_results.xlsx", help="결과를 저장할 Excel 파일 이름")
+    parser.add_argument("--excel_path", type=str, default="multi_deepface.xlsx", help="결과를 저장할 Excel 파일 이름")
     parser.add_argument("--target_fars", nargs='+', type=float, default=[0.01, 0.001, 0.0001], help="TAR을 계산할 FAR 목표값들")
-    parser.add_argument("--batch_size", type=int, default=2048, help="임베딩 추출 시 사용할 배치 크기")
-    parser.add_argument("--no-cache", action="store_true", help="이 플래그를 사용하면 기존 임베딩 캐시를 무시하고 새로 추출합니다.")
-    parser.add_argument("--plot-roc", action="store_true", help="이 플래그를 사용하면 ROC 커브 그래프를 파일로 저장합니다.", default=True)
+    parser.add_argument("--no-cache", action="store_true", help="이 플래그를 사용하면 기존 임베딩 캐시를 무시하고 새로 추출합니다.", default=False)
+    parser.add_argument("--plot-roc", action="store_true", help="이 플래그를 사용하면 ROC 커브 그래프를 파일로 저장합니다." , default=True)
     args = parser.parse_args()
 
     try:

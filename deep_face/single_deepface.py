@@ -25,9 +25,9 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s', filemode='w'
 )
 
-def get_all_embeddings(identity_map, model_name, detector_backend, dataset_name, use_cache=True):
-    """임베딩을 추출하거나 캐시에서 로드 (단일 프로세스)"""
-    cache_file = os.path.join(script_dir, f"embeddings_cache_{dataset_name}_{model_name}_single.pkl")
+def get_all_embeddings(identity_map, model, model_name, detector_backend, dataset_name, use_cache=True, batch_size=2048):
+    """임베딩을 추출하거나 캐시에서 로드 (배치 처리 기능 추가)"""
+    cache_file = os.path.join(script_dir, f"embeddings_cache_{dataset_name}_{model_name}_single_batch.pkl")
     
     if use_cache and os.path.exists(cache_file):
         print(f"\n캐시 파일 '{cache_file}'에서 임베딩을 로드합니다...")
@@ -37,19 +37,37 @@ def get_all_embeddings(identity_map, model_name, detector_backend, dataset_name,
         return embeddings
 
     all_images = sorted(list(set(itertools.chain.from_iterable(identity_map.values()))))
-    print(f"\n총 {len(all_images)}개의 이미지에 대해 임베딩을 새로 추출합니다 (단일 프로세스)...")
+    print(f"\n총 {len(all_images)}개의 이미지에 대해 임베딩을 새로 추출합니다 (배치 크기: {batch_size})...")
     
     embeddings = {}
-    for img_path in tqdm(all_images, desc="임베딩 추출"):
+    
+    for i in tqdm(range(0, len(all_images), batch_size), desc="임베딩 추출"):
+        batch_paths = all_images[i:i+batch_size]
         try:
-            embedding_obj = DeepFace.represent(
-                img_path=img_path, model_name=model_name,
-                detector_backend=detector_backend, enforce_detection=False
+            # 여러 이미지를 한 번에 처리
+            embedding_objs = DeepFace.represent(
+                img_path=batch_paths, 
+                model_name=model_name,
+                model=model,  # 미리 로드된 모델 사용
+                detector_backend=detector_backend, 
+                enforce_detection=False
             )
-            embeddings[img_path] = embedding_obj[0]['embedding']
+            # 결과 저장
+            for path, obj in zip(batch_paths, embedding_objs):
+                embeddings[path] = obj['embedding']
         except Exception as e:
-            logging.warning(f"임베딩 추출 오류: {img_path}. 제외됩니다. 오류: {e}")
-            embeddings[img_path] = None
+            logging.warning(f"배치 처리 중 오류 발생 ({i}번째 배치): {e}")
+            # 오류 발생 시, 해당 배치를 개별적으로 재시도
+            for img_path in batch_paths:
+                try:
+                    embedding_obj = DeepFace.represent(
+                        img_path=img_path, model_name=model_name, model=model,
+                        detector_backend=detector_backend, enforce_detection=False
+                    )
+                    embeddings[img_path] = embedding_obj[0]['embedding']
+                except Exception as inner_e:
+                    logging.warning(f"개별 임베딩 추출 오류: {img_path}. 제외됩니다. 오류: {inner_e}")
+                    embeddings[img_path] = None
 
     if use_cache:
         print(f"\n추출된 임베딩을 캐시 파일 '{cache_file}'에 저장합니다...")
@@ -127,29 +145,35 @@ def main(args):
 
     # --- 2단계: 평가 쌍 생성 ---
     print("\n평가에 사용할 동일 인물/다른 인물 쌍을 생성합니다...")
-    positive_pairs = [p for imgs in identity_map.values() for p in tqdm(itertools.combinations(imgs, 2))]
+    
+    positive_pairs = []
+    for imgs in tqdm(identity_map.values(), desc="동일 인물 쌍 생성"):
+        positive_pairs.extend(itertools.combinations(imgs, 2))
+
     num_positive_pairs = len(positive_pairs)
     
     identities = list(identity_map.keys())
     negative_pairs_set = set()
     if len(identities) > 1:
-        while len(negative_pairs_set) < num_positive_pairs:
-            id1, id2 = random.sample(identities, 2)
-            pair = (random.choice(identity_map[id1]), random.choice(identity_map[id2]))
-            sorted_pair = tuple(sorted(pair))
-            negative_pairs_set.add(sorted_pair)
+        with tqdm(total=num_positive_pairs, desc="다른 인물 쌍 생성") as pbar:
+            while len(negative_pairs_set) < num_positive_pairs:
+                id1, id2 = random.sample(identities, 2)
+                pair = (random.choice(identity_map[id1]), random.choice(identity_map[id2]))
+                sorted_pair = tuple(sorted(pair))
+                negative_pairs_set.add(sorted_pair)
+                pbar.update(len(negative_pairs_set) - pbar.n)  # 현재 세트 크기만큼 진행 상황 업데이트
     negative_pairs = list(negative_pairs_set)
 
     print(f"- 동일 인물 쌍: {len(positive_pairs)}개, 다른 인물 쌍: {len(negative_pairs)}개")
 
     # --- 3단계: 모델 빌드 ---
     print(f"\n모델({args.model_name})을 빌드하고 GPU에 로드합니다...")
-    DeepFace.build_model(args.model_name)
+    model = DeepFace.build_model(args.model_name)
     print("모델이 성공적으로 빌드되었습니다.")
 
     # --- 4단계: 임베딩 추출 또는 캐시 로드 ---
     dataset_name = os.path.basename(os.path.normpath(args.data_path))
-    embeddings = get_all_embeddings(identity_map, args.model_name, args.detector_backend, dataset_name, use_cache=not args.no_cache)
+    embeddings = get_all_embeddings(identity_map, model, args.model_name, args.detector_backend, dataset_name, use_cache=not args.no_cache, batch_size=args.batch_size)
 
     # --- 5단계: 점수 수집 ---
     print("\n미리 계산된 임베딩으로 거리를 계산합니다...")
@@ -208,6 +232,7 @@ if __name__ == "__main__":
     parser.add_argument("--detector_backend", type=str, default="retinaface", help="사용할 얼굴 탐지 백엔드")
     parser.add_argument("--excel_path", type=str, default="single_evaluation_results.xlsx", help="결과를 저장할 Excel 파일 이름")
     parser.add_argument("--target_fars", nargs='+', type=float, default=[0.01, 0.001, 0.0001], help="TAR을 계산할 FAR 목표값들")
+    parser.add_argument("--batch_size", type=int, default=2048, help="임베딩 추출 시 사용할 배치 크기")
     parser.add_argument("--no-cache", action="store_true", help="이 플래그를 사용하면 기존 임베딩 캐시를 무시하고 새로 추출합니다.")
     parser.add_argument("--plot-roc", action="store_true", help="이 플래그를 사용하면 ROC 커브 그래프를 파일로 저장합니다.", default=True)
     args = parser.parse_args()

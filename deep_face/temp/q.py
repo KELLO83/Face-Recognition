@@ -12,6 +12,7 @@ import pickle
 import argparse
 from scipy.spatial.distance import cosine
 import matplotlib.pyplot as plt
+from deepface.commons import functions
 
 # --- 로깅 및 경로 설정 ---
 try:
@@ -25,7 +26,7 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s', filemode='w'
 )
 
-def get_all_embeddings(identity_map, model, model_name, detector_backend, dataset_name, use_cache=True, batch_size=2048):
+def get_all_embeddings(identity_map, model, model_name, detector_backend, dataset_name, use_cache=True, batch_size=32):
     """임베딩을 추출하거나 캐시에서 로드 (배치 처리 기능 추가)"""
     cache_file = os.path.join(script_dir, f"embeddings_cache_{dataset_name}_{model_name}_single_batch.pkl")
     
@@ -162,12 +163,12 @@ def main(args):
 
     # --- 3단계: 모델 빌드 ---
     print(f"\n모델({args.model_name})을 빌드하고 GPU에 로드합니다...")
-    model = DeepFace.build_model(args.model_name)
+    DeepFace.build_model(args.model_name)
     print("모델이 성공적으로 빌드되었습니다.")
 
     # --- 4단계: 임베딩 추출 또는 캐시 로드 ---
     dataset_name = os.path.basename(os.path.normpath(args.data_path))
-    embeddings = get_all_embeddings(identity_map, model, args.model_name, args.detector_backend, dataset_name, use_cache=not args.no_cache, batch_size=args.batch_size)
+    embeddings = get_all_embeddings(identity_map, args.model_name, args.detector_backend, dataset_name, use_cache=not args.no_cache)
 
     # --- 5단계: 점수 수집 ---
     print("\n미리 계산된 임베딩으로 거리를 계산합니다...")
@@ -226,7 +227,6 @@ if __name__ == "__main__":
     parser.add_argument("--detector_backend", type=str, default="retinaface", help="사용할 얼굴 탐지 백엔드")
     parser.add_argument("--excel_path", type=str, default="single_evaluation_results.xlsx", help="결과를 저장할 Excel 파일 이름")
     parser.add_argument("--target_fars", nargs='+', type=float, default=[0.01, 0.001, 0.0001], help="TAR을 계산할 FAR 목표값들")
-    parser.add_argument("--batch_size", type=int, default=2048, help="임베딩 추출 시 사용할 배치 크기")
     parser.add_argument("--no-cache", action="store_true", help="이 플래그를 사용하면 기존 임베딩 캐시를 무시하고 새로 추출합니다.")
     parser.add_argument("--plot-roc", action="store_true", help="이 플래그를 사용하면 ROC 커브 그래프를 파일로 저장합니다.", default=True)
     args = parser.parse_args()
