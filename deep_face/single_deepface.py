@@ -25,9 +25,9 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s', filemode='w'
 )
 
-def get_all_embeddings(identity_map, model, model_name, detector_backend, dataset_name, use_cache=True, batch_size=10240):
+def get_all_embeddings(identity_map, model, detector_backend, dataset_name, head ='ArcFace' , use_cache=True, batch_size=10240):
     """임베딩을 추출하거나 캐시에서 로드 (배치 처리 기능 추가)"""
-    cache_file = os.path.join(script_dir, f"embeddings_cache_{dataset_name}_{model_name}_single_batch.pkl")
+    cache_file = os.path.join(script_dir, f"embeddings_cache_{dataset_name}_{head}_single_batch.pkl")
     
     if use_cache and os.path.exists(cache_file):
         print(f"\n캐시 파일 '{cache_file}'에서 임베딩을 로드합니다...")
@@ -47,7 +47,7 @@ def get_all_embeddings(identity_map, model, model_name, detector_backend, datase
 
             embedding_objs = DeepFace.represent(
                 img_path=batch_paths, 
-                model_name=model_name,
+                model_name=head,
                 detector_backend=detector_backend, 
                 enforce_detection=False,
                 normalization='ArcFace',
@@ -63,7 +63,7 @@ def get_all_embeddings(identity_map, model, model_name, detector_backend, datase
             for img_path in batch_paths:
                 try:
                     embedding_obj = DeepFace.represent(
-                        img_path=img_path, model_name=model_name, model=model,
+                        img_path=img_path, model_name=head, model=model,
                         detector_backend=detector_backend, enforce_detection=False
                     )
                     embeddings[img_path] = embedding_obj[0]['embedding']
