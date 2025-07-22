@@ -43,33 +43,22 @@ def get_all_embeddings(identity_map, model, detector_backend, dataset_name, head
     
     for i in tqdm(range(0, len(all_images), batch_size), desc="임베딩 추출"):
         batch_paths = all_images[i:i+batch_size]
-        try: 
-
-            embedding_objs = DeepFace.represent(
-                img_path=batch_paths, 
-                model_name=head,
-                detector_backend=detector_backend, 
-                enforce_detection=False,
-                normalization='ArcFace',
-                align=True,
-            )
-
-            for path, obj in zip(batch_paths, embedding_objs):
-                embeddings[path] = obj['embedding']  
-
-        except Exception as e:
-            logging.warning(f"배치 처리 중 오류 발생 ({i}번째 배치): {e}")
-
-            for img_path in batch_paths:
-                try:
-                    embedding_obj = DeepFace.represent(
-                        img_path=img_path, model_name=head, model=model,
-                        detector_backend=detector_backend, enforce_detection=False
-                    )
-                    embeddings[img_path] = embedding_obj[0]['embedding']
-                except Exception as inner_e:
-                    logging.warning(f"개별 임베딩 추출 오류: {img_path}. 제외됩니다. 오류: {inner_e}")
-                    embeddings[img_path] = None
+        
+        # DeepFace.represent()는 배치를 지원하지 않으므로 개별 처리
+        for img_path in batch_paths:
+            try:
+                embedding_obj = DeepFace.represent(
+                    img_path=img_path, 
+                    model_name=head,
+                    detector_backend=detector_backend, 
+                    enforce_detection=False,
+                    normalization='ArcFace',
+                    align=True,
+                )
+                embeddings[img_path] = embedding_obj[0]['embedding']
+            except Exception as e:
+                logging.warning(f"임베딩 추출 오류: {img_path}. 제외됩니다. 오류: {e}")
+                embeddings[img_path] = None
 
     if use_cache:
         print(f"\n추출된 임베딩을 캐시 파일 '{cache_file}'에 저장합니다...")
@@ -174,7 +163,7 @@ def main(args):
 
     # --- 4단계: 임베딩 추출 또는 캐시 로드 ---
     dataset_name = os.path.basename(os.path.normpath(args.data_path))
-    embeddings = get_all_embeddings(identity_map, model, args.model_name, args.detector_backend, dataset_name, use_cache=not args.no_cache, batch_size=args.batch_size)
+    embeddings = get_all_embeddings(identity_map, model, args.detector_backend, dataset_name, head=args.model_name, use_cache=not args.no_cache, batch_size=args.batch_size)
 
     # --- 5단계: 점수 수집 ---
     print("\n미리 계산된 임베딩으로 거리를 계산합니다...")
