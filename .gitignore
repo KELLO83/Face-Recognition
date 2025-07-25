@@ -17,3 +17,6 @@ __pycache__/
 .venv/
 *.log
 *.pt
+
+
+insight_face_package_model/
