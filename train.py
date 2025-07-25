@@ -89,7 +89,7 @@ def main():
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
-    
+
     writer = SummaryWriter()
 
     logging.info(f"Using device: {device}")
@@ -317,8 +317,10 @@ def main():
         logging.info(val_summary_message)
         train_log_file(log_file_path, val_summary_message)
 
+        if (opt.save_interval > 0 and epoch % opt.save_interval == 0) or epoch == 0:
+            logging.info(f"Saving model at epoch {epoch} to {opt.checkpoints_path}")
+            save_model(backbone, metric_fc, opt.checkpoints_path,opt.backbone, epoch)
 
-        save_model(backbone, metric_fc, opt.checkpoints_path, opt.backbone, epoch)
 
         if epoch_val_loss < best_val_loss:
             best_val_loss = epoch_val_loss

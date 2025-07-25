@@ -31,24 +31,7 @@ echo -e "${GREEN}✓ Docker 이미지 확인 완료${NC}"
 
 # GPU 지원 확인
 GPU_SUPPORT=""
-if command -v nvidia-smi &> /dev/null; then
-    if nvidia-smi &> /dev/null; then
-        GPU_SUPPORT="--gpus all"
-        echo -e "${GREEN}✓ NVIDIA GPU 감지됨 - GPU 가속 활성화${NC}"
-        
-        # GPU 정보 출력
-        echo -e "${BLUE}📊 GPU 정보:${NC}"
-        nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv,noheader,nounits | \
-        while IFS=, read -r name memory_total memory_free; do
-            echo -e "${BLUE}  - ${name}: ${memory_free}MB/${memory_total}MB 사용 가능${NC}"
-        done
-    else
-        echo -e "${YELLOW}⚠️  NVIDIA GPU가 있지만 nvidia-smi 실행 실패${NC}"
-        echo -e "${YELLOW}   GPU 없이 실행합니다.${NC}"
-    fi
-else
-    echo -e "${YELLOW}⚠️  GPU를 감지할 수 없습니다. CPU 모드로 실행합니다.${NC}"
-fi
+GPU_SUPPORT="--gpus all"
 
 # 기존 컨테이너 확인 및 정리
 if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
