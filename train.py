@@ -26,6 +26,8 @@ def wandb_init(Config):
 
 def save_model(backbone, metric_fc, save_path, name, iter_cnt, is_best=False):
     """Saves the model state for single GPU training."""
+
+    save_path = os.path.join(save_path, f'{name}')
     os.makedirs(save_path, exist_ok=True)
     if is_best:
         save_name = os.path.join(save_path, f'{name}_best.pth')
@@ -122,7 +124,7 @@ def main():
         backbone= Backbone(input_size=(112, 112), num_layers=50)
         logging.info("Using Resnet-50 backbone")
     elif opt.backbone == 'irsnet100': # Default or iresnet100
-        backbone = Backbone(input_size=(112, 112), num_layers=50, mode='ir_se')
+        backbone = Backbone(input_size=(112, 112), num_layers=100, mode='ir_se')
         logging.info("Using ir_ASIS_Resnet-100 backbone")
     else:
         raise ValueError(f"Unsupported backbone architecture: {opt.backbone}")

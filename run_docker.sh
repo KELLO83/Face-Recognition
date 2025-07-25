@@ -115,7 +115,7 @@ PORT_MAPPING="-p 6006:6006 -p 8888:8888"
 
 # 환경 변수 설정
 ENV_VARS=""
-ENV_VARS="${ENV_VARS} -e CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-all}"
+
 ENV_VARS="${ENV_VARS} -e PYTHONPATH=/workspace"
 
 # 추가 볼륨 마운트 (선택적)
