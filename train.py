@@ -25,26 +25,29 @@ def wandb_init(Config):
 
 
 def save_model(backbone, metric_fc, save_path, name, iter_cnt, is_best=False):
-    """Saves the model state for single GPU training."""
 
-    save_path = os.path.join(save_path, f'{name}')
-    os.makedirs(save_path, exist_ok=True)
+    model_dir = os.path.join(save_path, name)
+    os.makedirs(model_dir, exist_ok=True)
+
     if is_best:
-        save_name = os.path.join(save_path, f'{name}_best.pth')
+        backbone_name = os.path.join(model_dir, f'{name}_best.pth')
+        head_name = os.path.join(model_dir, 'head_best.pth')
     else:
-        save_name = os.path.join(save_path, f'{name}_{iter_cnt}.pth')
+        backbone_name = os.path.join(model_dir, f'{name}_{iter_cnt}.pth')
+        head_name = os.path.join(model_dir, f'head_{iter_cnt}.pth')
 
-    head_name = f'Head {iter_cnt}.pth'
     torch.save({
         'backbone_state_dict': backbone.state_dict(),
-    }, save_name)
+    }, backbone_name)
 
+    # Save the head
     torch.save({
         'metric_fc_state_dict': metric_fc.state_dict(),
-    }, os.path.join(save_path, head_name))
+    }, head_name)
 
-    logging.info(f"Model saved to {save_name}")
-    return save_name
+    logging.info(f"Model backbone saved to {backbone_name}")
+    logging.info(f"Model head saved to {head_name}")
+    return backbone_name
 
 def load_weights(model, weight_path, model_name, device):
     """Loads weights for a model in single GPU context."""
@@ -140,7 +143,7 @@ def main():
     else:
         metric_fc = ArcMarginProduct(512, num_classes, s=16.0, m=0.4, easy_margin=opt.easy_margin)
 
-    if opt.backbone_pretrained_weights != None:
+    if opt.backbone_pretrained_weights != None and opt.backbone == 'irsnet50':
         load_weights(backbone, opt.backbone_pretrained_weights,opt.backbone,device)
     if opt.head_pretrained_weights != None:
         load_weights(backbone, opt.head_pretrained_weights, opt.metric, device)
@@ -148,16 +151,17 @@ def main():
 
 
     #백본 일부 동결 
-    for name, param in backbone.named_parameters():
-        if 'body.' in name:
-            try:
-                body_idx = int(name.split('.')[1])
-                if body_idx < 13:
-                    param.requires_grad = False
-            except (ValueError, IndexError):
-                continue
-        elif 'input_layer' in name:
-            param.requires_grad = False
+    if opt.backbone == 'irsnet50':
+        for name, param in backbone.named_parameters():
+            if 'body.' in name:
+                try:
+                    body_idx = int(name.split('.')[1])
+                    if body_idx < 13:
+                        param.requires_grad = False
+                except (ValueError, IndexError):
+                    continue
+            elif 'input_layer' in name:
+                param.requires_grad = False
 
     
     try:
