@@ -41,6 +41,7 @@ class Dataset(data.Dataset):
         if self.phase == 'train':
             self.transforms = V2.Compose([
                 V2.ToTensor(),
+                V2.CenterCrop(size=(112,112)),
                 V2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
             ])
 
