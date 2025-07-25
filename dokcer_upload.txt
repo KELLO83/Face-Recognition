@@ -1,0 +1,15 @@
+
+실행중지 방법 docker stop arcface-training
+코드 수정시 재빌드 방법docker build -t arcface-pytorch:latest .
+
+
+docker run -it --gpus all --name arcface-training -p 6006:6006 -v $(pwd)/checkpoints:/workspace/checkpoints
+ -v $(pwd)/logs:/workspace/logs -v $(pwd)/data:/workspace/data arcface-pytorch:latest python train.py
+
+
+
+docker run -it --gpus all --name arcface-training --shm-size=8g -p 6006:6006 -e CUDA_HOME=/usr/local/cuda -e PATH=/usr/local/cuda/bin:$PATH -e LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH 
+-v $(pwd)/checkpoints:/workspace/checkpoints -v $(pwd)/logs:/workspace/logs -v $(pwd)/data:/workspace/data arcface-pytorch:latest bash
+
+
+docker run -it --gpus all --name arcface-training --shm-size=8g -p 6006:6006 -e CUDA_HOME=/usr/local/cuda -e PATH=/usr/local/cuda/bin:$PATH -e LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH -v $(pwd)/checkpoints:/workspace/checkpoints -v $(pwd)/logs:/workspace/logs -v $(pwd)/data:/workspace/data arcface-pytorch:latest bash

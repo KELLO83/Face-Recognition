@@ -1,0 +1,57 @@
+# Git 관련
+.git
+.gitignore
+*.md
+README.md
+
+# Python 관련
+.venv
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# 로그 및 캐시
+*.log
+.cache
+.coverage
+.coverage.*
+.pytest_cache/
+.mypy_cache/
+
+# IDE 관련
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# 사용하지 않는 패키지 폴더 (명시적으로 제외)
+insight_face_package_model/
+
+# 임시 파일들
+temp/
+tmp/
+
+# 훈련 관련 (선택적)
+checkpoints/*.pth
+logs/
+runs/
+wandb/
+
+# 데이터셋 (용량이 큰 경우 주석 해제)
+# dataset/
+# data/celebA/
+# pair/
+# pair_test/
+
+# 기타
+*.zip
+*.tar.gz
+*.tar
