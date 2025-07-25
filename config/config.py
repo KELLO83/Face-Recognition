@@ -8,7 +8,7 @@ class Config:
         self.easy_margin = True
         self.loss = 'cross_entropy'
 
-        self.train_batch_size = 64 * 3 # 256 , 384 ,448 , 512
+        self.train_batch_size = 1024 # 256 , 384 ,448 , 512
         self.input_size = (3, 112, 112)
         self.max_epoch = 200
         self.backbone_lr = 1e-4
