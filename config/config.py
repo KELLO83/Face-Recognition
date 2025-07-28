@@ -30,7 +30,7 @@ class Config:
 
         self.optimizer_pretrained = None
 
-        self.wandb_name = None
+        self.name = None
 
 def create_parser():
 
@@ -105,7 +105,7 @@ def create_parser():
     
 
     # Model paths
-    model_path_group = parser.add_argument_group('Model Paths')
+    model_path_group = parser.add_argument_group('Mowandb_namedel Paths')
     model_path_group.add_argument('--checkpoints_path', type=str, default='checkpoints',
                                 help='Checkpoints save directory')
     model_path_group.add_argument('--load_model_path', type=str, default='models/resnet18.pth',
@@ -116,7 +116,7 @@ def create_parser():
                                 help='Model save interval (epochs)')
     model_path_group.add_argument('--train_root', type=str,
                                 help='Train root directory')
-    model_path_group.add_argument('--wandb_name', type=str, default=None,
+    model_path_group.add_argument('--name', type=str, default=None,
                                 help='Weights save name')
     
 

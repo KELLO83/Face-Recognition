@@ -17,8 +17,8 @@ import utils
 import  wandb
 
 def wandb_init(Config):
-    name = Config.wandb_name
-    del Config.wandb_name 
+    name = Config.name
+    del Config.name
     wandb.init(
         project='arcface-pytorch',
         name=name,        
