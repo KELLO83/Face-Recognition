@@ -1,7 +1,5 @@
 from __future__ import print_function
 
-import os
-import time
 import logging
 import torch
 from torch.utils import data
@@ -15,6 +13,10 @@ from models import *
 from models.backbone.ir_ASIS_Resnet import Backbone
 import utils
 import  wandb
+
+import os
+os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 def wandb_init(Config):
     name = Config.name
@@ -121,6 +123,12 @@ def main():
     )
     logging.info(f"Training set size: {len(train_dataset)}")
     logging.info(f"Validation set size: {len(val_dataset)}")
+
+    interactive_mode = os.getenv('INTERACTIVE_MODE', 'true').lower() == 'true'
+    
+    if interactive_mode:
+        logging.info("훈련을 시작하려면 아무 키나 입력하세요...")
+        running = input("")
 
 
     if opt.loss == 'focal_loss':

@@ -63,35 +63,30 @@ class Dataset(data.Dataset):
         self.phase = phase
         self.input_shape = input_shape
 
+        self.CLAHE_transform = A.CLAHE(p=0.3, clip_limit=2.0, tile_grid_size=(8, 8))
+
+
         self.image_paths = []
         self.labels = []
 
-    
-        folder_names = os.listdir(root)
-        try:
-            numeric_folders = [f for f in folder_names if f.isdigit()]
-            self.classes = sorted(numeric_folders, key=int)  
-        except:
-            self.classes = natsort.natsorted(folder_names)
-        
-        class_to_idx = {cls_name: int(cls_name) if cls_name.isdigit() else i 
-                       for i, cls_name in enumerate(self.classes)}
+        self.classes = natsort.natsorted(os.listdir(root))  
+        class_to_idx = {cls_name: i for i, cls_name in enumerate(self.classes)}
 
-        self.CLAHE_transform = A.CLAHE(p=0.3, clip_limit=2.0, tile_grid_size=(8, 8))
 
-        for cls_name in tqdm(self.classes):
+        for cls_name in tqdm(self.classes, desc="Loading images"):
             class_idx = class_to_idx[cls_name]
-            class_dir = os.path.join(root , cls_name)
-
+            class_dir = os.path.join(root, cls_name)
+            
             if not os.path.isdir(class_dir):
                 continue
-
+                
             for img_name in os.listdir(class_dir):
-                img_path = os.path.join(class_dir , img_name)
-
-                self.image_paths.append(img_path)
-                self.labels.append(class_idx)
-
+                img_path = os.path.join(class_dir, img_name)
+     
+                if img_name.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff')):
+                    self.image_paths.append(img_path)
+                    self.labels.append(class_idx)
+                    
         if self.phase == 'train':
             self.transforms = V2.Compose([
                 V2.ToTensor(),
@@ -170,44 +165,78 @@ class FilteredDataset(data.Dataset):
         return len(self.classes_to_keep)
 
 if __name__ == '__main__':
-    print("🚀 Dataset 시각화 테스트 시작...")
+    print("🚀 Dataset 매핑 검증 테스트 시작...")
     
     dataset = Dataset(root='/home/ubuntu/arcface-pytorch/pair',
                       phase='train',
                       input_shape=(1, 112, 112))
 
-    print(f"📊 Dataset 정보:")
+    print(f"\n📊 Dataset 정보:")
     print(f"   - 총 이미지 수: {len(dataset)}")
     print(f"   - 클래스 수: {dataset.get_classes}")
     print(f"   - 첫 10개 클래스: {dataset.classes[:10]}")
     
+    # 클래스별 매핑 정보 출력
+    print(f"\n🏷️ 클래스 -> 라벨 매핑 (처음 20개):")
+    for i, cls_name in enumerate(dataset.classes[:20]):
+        print(f"   폴더 '{cls_name}' -> 라벨 {i}")
+    
     trainloader = data.DataLoader(dataset, batch_size=4, shuffle=False, num_workers=2)
 
-    for index, (transformed, label, image_path) in tqdm(enumerate(trainloader)):
-
-        answer_label = list(map(int, map(lambda x: x.split('/')[-2], image_path)))
-        answer_label_tensor = torch.tensor(answer_label, dtype=torch.int32)
+    print(f"\n🔍 배치별 매핑 검증:")
+    for index, (transformed, label, image_path) in enumerate(trainloader):
+        # 실제 폴더명에서 예상 라벨 계산
+        folder_names = [path.split('/')[-2] for path in image_path]
+        expected_labels = []
         
-        print(f"\n📋 Batch {index + 1} 정보:")
-        print(f"   - Transformed Image Shape: {transformed.shape}")
-        print(f"   - Labels: {label.tolist()}")
-        print(f"   - Answer Labels: {answer_label_tensor.tolist()}")
-        print(f"   - Image Paths: {['/'.join(path.split('/')[-2 : ]) for path in image_path]}")
+        for folder_name in folder_names:
+            try:
+                expected_label = dataset.classes.index(folder_name)
+                expected_labels.append(expected_label)
+            except ValueError:
+                print(f"   ⚠️ 폴더 '{folder_name}'을 클래스 목록에서 찾을 수 없습니다!")
+                expected_labels.append(-1)
+        
+        expected_label_tensor = torch.tensor(expected_labels, dtype=torch.int32)
+        
+        print(f"\n📋 Batch {index + 1} 매핑 검증:")
+        print(f"   - Image Shape: {transformed.shape}")
+        
+        for i in range(len(image_path)):
+            folder_name = folder_names[i]
+            actual_label = label[i].item()
+            expected_label = expected_labels[i]
+            path_short = '/'.join(image_path[i].split('/')[-2:])
+            
+            print(f"   [{i}] {path_short}")
+            print(f"       폴더: '{folder_name}' -> 예상 라벨: {expected_label}, 실제 라벨: {actual_label}")
+            
+            if actual_label == expected_label:
+                print(f"       ✅ 매핑 정확!")
+            else:
+                print(f"       ❌ 매핑 오류!")
+                print(f"       클래스 순서에서 '{folder_name}'의 인덱스: {dataset.classes.index(folder_name) if folder_name in dataset.classes else 'Not Found'}")
 
-        if torch.equal(label, answer_label_tensor):
-            print("   ✅ 라벨이 일치합니다!")
+        if torch.equal(label, expected_label_tensor):
+            print(f"   🎯 Batch {index + 1} 전체 매핑 정확!")
         else:
-            raise ValueError("❌ Labels do not match! label: {}, answer_label: {} img_path: {}".format(
-                label, answer_label_tensor, image_path))
+            print(f"   ⚠️ Batch {index + 1} 매핑에 오류가 있습니다!")
+            print(f"       실제 라벨: {label.tolist()}")
+            print(f"       예상 라벨: {expected_label_tensor.tolist()}")
 
-        if index < 3:
-            print(f"\n🖼️ Batch {index + 1} 이미지 시각화 중...")
-           
-            visualize_batch(transformed, labels=label)
 
-            print(f"   📊 Tensor 통계:")
-            print(f"      - Min: {transformed.min().item():.4f}")
-            print(f"      - Max: {transformed.max().item():.4f}")
-            print(f"      - Mean: {transformed.mean().item():.4f}")
-            print(f"      - Std: {transformed.std().item():.4f}")
+        # # 간단한 시각화 (선택사항)
+        # if index < 2:
+        #     print(f"   �️ Tensor 통계:")
+        #     print(f"      - Min: {transformed.min().item():.4f}")
+        #     print(f"      - Max: {transformed.max().item():.4f}")
+        #     print(f"      - Mean: {transformed.mean().item():.4f}")
+        #     print(f"      - Std: {transformed.std().item():.4f}")
+    
+    # 최종 매핑 상태 요약
+    print(f"\n✅ Dataset 매핑 검증 완료!")
+    print(f"📈 매핑 요약:")
+    print(f"   - 사용된 클래스 정렬 방식: natsort")
+    print(f"   - 라벨 범위: 0 ~ {len(dataset.classes)-1}")
+    print(f"   - 매핑 방식: 클래스 인덱스 = 라벨 값")
         
