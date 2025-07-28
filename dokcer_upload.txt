@@ -22,3 +22,12 @@ docker run --gpus all --rm --shm-size=16g -v /home/ubuntu/arcface-pytorch/data:/
 
 # 배치 사이즈 512로 설정하고 num_workers 줄이기 (메모리 절약)
 docker run --gpus all --rm --shm-size=16g -v /home/ubuntu/arcface-pytorch/data:/workspace/data -v /home/ubuntu/arcface-pytorch/checkpoints:/workspace/checkpoints -v /home/ubuntu/arcface-pytorch/logs:/workspace/logs arcface-pytorch:latest python train.py --train_batch_size 512 
+
+
+docker run --gpus all -d --name my_training_container my_image python train.py
+
+docker run --gpus all -d --name arcface_training_bg --shm-size=100g \
+  -v /home/ubuntu/arcface-pytorch/data:/workspace/data \
+  -v /home/ubuntu/arcface-pytorch/checkpoints:/workspace/checkpoints \
+  -v /home/ubuntu/arcface-pytorch/logs:/workspace/logs \
+  arcface-pytorch:latest python train.py

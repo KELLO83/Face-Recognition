@@ -13,4 +13,5 @@ import torchvision
 #     transforms.Normalize([0.5]*3, [0.5]*3)
 # ])
 
-data = torchvision.datasets.CelebA(split='train', download=True , target_type='idenetity',root='data/celebA', transform=None)
+data = torchvision.datasets.CelebA(split='all', download=True , target_type='idenetity',root='data/celebA', transform=None)
+

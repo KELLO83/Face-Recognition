@@ -8,7 +8,7 @@ from torch.utils import data
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import config.config as config
-
+from utils.earlystop_ import EarlyStopping
 from data.dataset import Dataset
 from models import *
 #from models.backbone.irsnet import iresnet50, iresnet100 #ms1mv3_arcface_r50_fp16
@@ -17,8 +17,11 @@ import utils
 import  wandb
 
 def wandb_init(Config):
+    name = Config.wandb_name
+    del Config.wandb_name 
     wandb.init(
         project='arcface-pytorch',
+        name=name,        
         config=Config,
     )
 
@@ -77,6 +80,8 @@ def main():
     total_cpus = os.cpu_count() or 1
     num_workers = max(1, total_cpus // 2)
 
+    stopping = EarlyStopping(patience=10, verbose=True, delta=1e-2)
+
     try:
         wandb_init(config.get_config(rank=rank))
     except Exception as e:
@@ -107,11 +112,11 @@ def main():
     train_dataset, val_dataset = torch.utils.data.random_split(full_dataset, [train_size, val_size])
 
     trainloader = data.DataLoader(
-        train_dataset, batch_size=opt.train_batch_size, shuffle=True,
+        train_dataset, batch_size=opt.batch_size, shuffle=True,
         num_workers=num_workers, pin_memory=True
     )
     valloader = data.DataLoader(
-        val_dataset, batch_size=opt.train_batch_size, shuffle=False,
+        val_dataset, batch_size=opt.batch_size, shuffle=False,
         num_workers=num_workers, pin_memory=True
     )
     logging.info(f"Training set size: {len(train_dataset)}")
@@ -137,11 +142,11 @@ def main():
     if opt.metric == 'add_margin':
         metric_fc = AddMarginProduct(512, num_classes, s=30, m=0.35)
     elif opt.metric == 'arc_margin':
-        metric_fc = ArcMarginProduct(512, num_classes, s=16.0, m=0.4, easy_margin=opt.easy_margin)
+        metric_fc = ArcMarginProduct(512, num_classes, s=30, m=0.35, easy_margin=opt.easy_margin)
     elif opt.metric == 'sphere':
         metric_fc = SphereProduct(512, num_classes, m=4)
     else:
-        metric_fc = ArcMarginProduct(512, num_classes, s=16.0, m=0.4, easy_margin=opt.easy_margin)
+        metric_fc = ArcMarginProduct(512, num_classes, s=30, m=0.35, easy_margin=opt.easy_margin)
 
     if opt.backbone_pretrained_weights != None and opt.backbone == 'irsnet50':
         load_weights(backbone, opt.backbone_pretrained_weights,opt.backbone,device)
@@ -156,7 +161,7 @@ def main():
             if 'body.' in name:
                 try:
                     body_idx = int(name.split('.')[1])
-                    if body_idx < 13:
+                    if body_idx < 20:
                         param.requires_grad = False
                 except (ValueError, IndexError):
                     continue
@@ -316,7 +321,7 @@ def main():
                 'val_acc': epoch_val_acc,
                 'epoch': epoch
             })
-        except Exception as e:
+        except Exception as e: # 조기 종료를 의미하며 초기값은 False로 설정
             logging.error(f"Error logging to wandb: {e}")
 
         val_summary_message = f'--- Epoch {epoch} Validation Summary --- Loss: {epoch_val_loss:.4f}, Acc: {epoch_val_acc:.4f}'
@@ -328,6 +333,7 @@ def main():
             save_model(backbone, metric_fc, opt.checkpoints_path,opt.backbone, epoch)
 
 
+        early_stop_flag = stopping(epoch_val_loss)
         if epoch_val_loss < best_val_loss:
             best_val_loss = epoch_val_loss
             best_val_acc = epoch_val_acc
@@ -339,6 +345,25 @@ def main():
             best_save_dir = os.path.join(opt.checkpoints_path, 'best')
             save_model(backbone, metric_fc, best_save_dir, opt.backbone, epoch, is_best=True)
 
+        
+        if early_stop_flag:
+            early_stop_message = f"Early stopping triggered at epoch {epoch}. Training stopped."
+            logging.info(early_stop_message)
+            train_log_file(log_file_path, early_stop_message)
+
+            final_message = f"Training completed early. Best validation - Loss: {best_val_loss:.4f}, Acc: {best_val_acc:.4f}"
+            logging.info(final_message)
+            train_log_file(log_file_path, final_message)
+            
+            try:
+                wandb.log({
+                    'early_stop_epoch': epoch,
+                    'final_best_val_loss': best_val_loss,
+                    'final_best_val_acc': best_val_acc,
+                    'training_completed': True
+                })
+            except Exception as e:
+                logging.error(f"Error logging early stop to wandb: {e}")
 
     writer.close()
     logging.info("Training finished.")

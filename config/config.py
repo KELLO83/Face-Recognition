@@ -8,7 +8,7 @@ class Config:
         self.easy_margin = True
         self.loss = 'cross_entropy'
 
-        self.train_batch_size = 896 # 256 , 384 ,448 , 512
+        self.batch_size = 512 # 256 , 384 ,448 , 512
         self.input_size = (3, 112, 112)
         self.max_epoch = 300
         self.backbone_lr = 1e-4
@@ -30,12 +30,16 @@ class Config:
 
         self.optimizer_pretrained = None
 
+        self.wandb_name = None
+
 def create_parser():
 
     parser = argparse.ArgumentParser(
         description='PyTorch Training Configuration',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
+
+
 
     model_group = parser.add_argument_group('Model Architecture')
 
@@ -71,7 +75,7 @@ def create_parser():
     train_group.add_argument('--optimizer_pretrained_path',type=str,
                              help='pretrained optimzer call path')
 
-    train_group.add_argument('--train_batch_size', type=int,
+    train_group.add_argument('--batch_size', type=int,
                            help='Training batch size')
     
     train_group.add_argument('--input_size', type=str, default='1,112,112',
@@ -112,6 +116,8 @@ def create_parser():
                                 help='Model save interval (epochs)')
     model_path_group.add_argument('--train_root', type=str,
                                 help='Train root directory')
+    model_path_group.add_argument('--wandb_name', type=str, default=None,
+                                help='Weights save name')
     
 
     return parser
