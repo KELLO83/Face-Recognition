@@ -15,7 +15,7 @@ for name, param in backbone.named_parameters():
     if 'body.' in name:
         try:
             body_idx = int(name.split('.')[1])
-            if body_idx < 20: 
+            if body_idx < 23: 
                 param.requires_grad = False
         except (ValueError, IndexError):
             continue
@@ -50,3 +50,11 @@ trainable_percentage = (trainable_backbone_params / backbone_params) * 100 if ba
 print(f"Total Backbone Parameters: {backbone_params}")
 print(f"Trainable Backbone Parameters: {trainable_backbone_params} ({trainable_percentage:.2f}%)")
 print(f"Frozen Backbone Parameters: {backbone_params - trainable_backbone_params} ({100 - trainable_percentage:.2f}%)")
+
+backbone = backbone.to('cuda:1')
+backbone.eval()
+dummy_input = dummy_input.to('cuda:1')
+dummy_input = torch.tensor(dummy_input , dtype=torch.float32)
+out = backbone(dummy_input)
+
+print(out.shape)

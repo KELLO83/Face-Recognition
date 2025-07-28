@@ -145,6 +145,7 @@ def main():
     
     logging.info(f"Training set size: {len(train_dataset)}")
     logging.info(f"Validation set size: {len(val_dataset)}")
+    logging.info("total classes: {}".format(full_dataset.get_classes))
 
 
     if opt.loss == 'focal_loss':
