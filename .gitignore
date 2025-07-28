@@ -35,8 +35,8 @@ __pycache__/
 *.pyc
 *.pkl
 
-!models/
-!models/**/*
+
+!models/backbone/
 
 # === 이미지 파일 ===
 *.jpg
@@ -114,7 +114,7 @@ output.log
 embeddings_cache_*
 
 # === AI 모델 파일 ===
-/models/
+
 *.onnx
 *.pth
 *.pt
