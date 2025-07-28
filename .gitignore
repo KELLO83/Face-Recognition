@@ -16,6 +16,8 @@ __pycache__/
 .venv/
 *.log
 *.pt
+checkpoints/
+
 
 
 insight_face_package_model/
