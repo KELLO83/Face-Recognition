@@ -94,6 +94,9 @@ class Dataset(data.Dataset):
                 V2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
                 V2.RandomHorizontalFlip(p=0.3),
                 V2.RandomRotation(degrees=10),
+                V2.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+                V2.RandomAffine(degrees=10, translate=(0.1, 0.1), scale=(0.9, 1.1))
+
             ])
         elif self.phase == 'val':
 

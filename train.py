@@ -41,14 +41,9 @@ def save_model(backbone, metric_fc, save_path, name, iter_cnt, is_best=False):
         backbone_name = os.path.join(model_dir, f'{name}_{iter_cnt}.pth')
         head_name = os.path.join(model_dir, f'head_{iter_cnt}.pth')
 
-    torch.save({
-        'backbone_state_dict': backbone.state_dict(),
-    }, backbone_name)
+    torch.save(backbone.state_dict(), backbone_name)
 
-    # Save the head
-    torch.save({
-        'metric_fc_state_dict': metric_fc.state_dict(),
-    }, head_name)
+    torch.save(metric_fc.state_dict() , head_name)
 
     logging.info(f"Model backbone saved to {backbone_name}")
     logging.info(f"Model head saved to {head_name}")
@@ -57,12 +52,16 @@ def save_model(backbone, metric_fc, save_path, name, iter_cnt, is_best=False):
 def load_weights(model, weight_path, model_name, device):
     """Loads weights for a model in single GPU context."""
     if weight_path and os.path.exists(weight_path) and weight_path != 'None':
+
         try:
             print(f"Loading weights for {model_name} from {weight_path}")
+
+            weight = torch.load(weight_path, map_location=device)
             load_result = model.load_state_dict(
-                torch.load(weight_path, map_location=device),
+                weight,
                 strict=False
             )
+
             logging.info(f"Pre-trained weights for {model_name} loaded from {weight_path}.")
             if load_result.missing_keys or load_result.unexpected_keys:
                 logging.info(f"Missing keys for {model_name}: {load_result.missing_keys}")
@@ -186,7 +185,7 @@ def main():
             if 'body.' in name:
                 try:
                     body_idx = int(name.split('.')[1])
-                    if body_idx < 20:
+                    if body_idx < 23:
                         param.requires_grad = False
                 except (ValueError, IndexError):
                     continue

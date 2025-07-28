@@ -5,7 +5,6 @@ import torchinfo
 
 weight = torch.load('models/weight/backbone_ir50_asia.pth', map_location='cpu')
 
-
 backbone = Backbone(input_size=(112, 112, 3), num_layers=50)
 print(backbone)
 load_result = backbone.load_state_dict(weight, strict=False)

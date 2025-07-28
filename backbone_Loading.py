@@ -3,11 +3,22 @@ from models.backbone.ir_ASIS_Resnet import Backbone
 import torchinfo
 
 weight = torch.load('models/weight/backbone_ir50_asia.pth', map_location='cpu')
+weight = torch.load('checkpoints/best/irsnet50/irsnet50_best.pth' , map_location='cpu')
+
+
+
+if 'backbone_state_dict' in weight:
+    state_dict = weight['backbone_state_dict']
+elif 'metric_fc_state_dict' in weight:
+    state_dict = weight['metric_fc_state_dict']
+elif 'state_dict' in weight:
+    state_dict = weight['state_dict']
+else:
+    state_dict = weight
 
 
 iresnet_model = Backbone(input_size=(112, 112, 3), num_layers=50)
-print(iresnet_model)
-load_result = iresnet_model.load_state_dict(weight, strict=False)
+load_result = iresnet_model.load_state_dict(state_dict, strict=False)
 
 
 print("누락된 가중치 : {}".format(load_result.missing_keys))
