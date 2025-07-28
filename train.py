@@ -84,14 +84,17 @@ def main():
 
     stopping = EarlyStopping(patience=10, verbose=True, delta=1e-2)
 
+
     try:
         wandb_init(config.get_config(rank=rank))
     except Exception as e:
         logging.error(f"Error initializing wandb: {e}")
         wandb.init(mode="disabled")
 
+
     print(f"Total CPUs: {total_cpus}, Using {num_workers} workers for data loading.")
     torch.backends.cudnn.benchmark = True
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
     opt = config.get_config(rank = rank)
@@ -220,22 +223,27 @@ def main():
     if rank == 0:
         backbone_params = sum(p.numel() for p in backbone.parameters()) 
         trainable_backbone_params = sum(p.numel() for p in backbone.parameters() if p.requires_grad)
+        trainable_percentage = (trainable_backbone_params / backbone_params) * 100 if backbone_params > 0 else 0
+
         logging.info('==' * 30)
         logging.info(f"Backbone total params: {backbone_params:,}")
         logging.info(f"Backbone trainable params: {trainable_backbone_params:,}")
         logging.info(f"Head total params: {sum(p.numel() for p in metric_fc.parameters()):,} ")
+        logging.info(f"Trainable Backbone Percentage: {trainable_percentage:.2f}%")
         logging.info(f"Head trainable params: {sum(p.numel() for p in metric_fc.parameters() if p.requires_grad):,}")
         logging.info('==' * 30)
 
     interactive_mode = os.getenv('INTERACTIVE_MODE', 'true').lower() == 'true'
     
     if interactive_mode:
-        logging.info("훈련을 시작하려면 아무 키나 입력하세요...")
+        logging.info("훈련을 시작하려면 아무 키나 입력하세요... 종료 (1)")
         running = input("")
-
-
+        if running == '1' :
+            logging.info("훈련을 종료합니다.")
+            return
+        
     scheduler = utils.lr_scheduler.PolynomialLRWarmup(
-        optimizer, warmup_iters=5, total_iters=opt.max_epoch, power=1.0
+        optimizer, warmup_iters=10, total_iters=opt.max_epoch, power=1.0 , limit_lr = 1e-5
     )
     scaler = torch.amp.GradScaler(enabled=False)
 
@@ -311,7 +319,6 @@ def main():
         train_log_file(log_file_path, train_summary_message)
 
 
-        scheduler.step()
         backbone.eval()
         metric_fc.eval()
         val_loss, val_corrects, val_total = 0.0, 0, 0
@@ -337,6 +344,7 @@ def main():
                     'Acc': f'{val_corrects/val_total:.4f}' if val_total > 0 else '0.0'
                 })
 
+        scheduler.step()
         epoch_val_loss = val_loss / val_total if val_total > 0 else 0
         epoch_val_acc = val_corrects / val_total if val_total > 0 else 0
         writer.add_scalar('val/epoch_loss', epoch_val_loss, epoch)
@@ -354,9 +362,13 @@ def main():
         logging.info(val_summary_message)
         train_log_file(log_file_path, val_summary_message)
 
-        if (opt.save_interval > 0 and epoch % opt.save_interval == 0) or epoch == 0:
+
+        should_save_regular = (opt.save_interval > 0 and epoch % opt.save_interval == 0)
+        should_save_first = (epoch == 0)  
+        if should_save_first or should_save_regular:
             logging.info(f"Saving model at epoch {epoch} to {opt.checkpoints_path}")
             save_model(backbone, metric_fc, opt.checkpoints_path,opt.backbone, epoch)
+
 
 
         early_stop_flag = stopping(epoch_val_loss)

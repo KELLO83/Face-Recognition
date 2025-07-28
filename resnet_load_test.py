@@ -40,3 +40,13 @@ model_info = torchinfo.summary(
     depth=4
 )
 print(model_info)
+
+
+backbone_params = sum(p.numel() for p in backbone.parameters()) 
+trainable_backbone_params = sum(p.numel() for p in backbone.parameters() if p.requires_grad)
+trainable_percentage = (trainable_backbone_params / backbone_params) * 100 if backbone_params > 0 else 0
+
+
+print(f"Total Backbone Parameters: {backbone_params}")
+print(f"Trainable Backbone Parameters: {trainable_backbone_params} ({trainable_percentage:.2f}%)")
+print(f"Frozen Backbone Parameters: {backbone_params - trainable_backbone_params} ({100 - trainable_percentage:.2f}%)")
