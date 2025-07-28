@@ -8,14 +8,14 @@ class Config:
         self.easy_margin = True
         self.loss = 'cross_entropy'
 
-        self.batch_size = 512 # 256 , 384 ,448 , 512
+        self.batch_size = 2048 # 256 , 384 ,448 , 512
         self.input_size = (3, 112, 112)
-        self.max_epoch = 300
-        self.backbone_lr = 1e-4
+        self.max_epoch = 100
+        self.backbone_lr = 5e-3 # 사전학습 1e-4 or 5e-4 처음 1e-3 , 5e-3
         self.head_lr = 1e-3
         self.lr_step = 10
         self.lr_decay = 0.95
-        self.weight_decay = 5e-4
+        self.weight_decay = 1e-4 # 데이터셋이 작다면 1e-4, 데이터셋이 크다면 5e-4
         self.optimizer = 'adamw'
 
         self.train_root = './pair' 

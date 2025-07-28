@@ -109,26 +109,39 @@ def main():
         logging.warning("CUDA is not available. Training on CPU.")
 
     full_dataset = Dataset(root=opt.train_root, phase='train', input_shape=(3, 112, 112))
+        
     train_size = int(0.8 * len(full_dataset))
     val_size = len(full_dataset) - train_size
-    train_dataset, val_dataset = torch.utils.data.random_split(full_dataset, [train_size, val_size])
+    torch.manual_seed(42)
+    train_indices, val_indices = torch.utils.data.random_split(
+        range(len(full_dataset)), [train_size, val_size]
+    )
+
+
+    train_full_dataset = Dataset(root=opt.train_root, phase='train', input_shape=(3, 112, 112))
+    val_full_dataset = Dataset(root=opt.train_root, phase='val', input_shape=(3, 112, 112))
+
+    train_dataset = torch.utils.data.Subset(train_full_dataset, train_indices.indices)
+    val_dataset = torch.utils.data.Subset(val_full_dataset, val_indices.indices)
 
     trainloader = data.DataLoader(
-        train_dataset, batch_size=opt.batch_size, shuffle=True,
-        num_workers=num_workers, pin_memory=True
+        train_dataset,
+        batch_size=opt.batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=True,
     )
+
     valloader = data.DataLoader(
-        val_dataset, batch_size=opt.batch_size, shuffle=False,
-        num_workers=num_workers, pin_memory=True
+        val_dataset,
+        batch_size=opt.batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True,
     )
+    
     logging.info(f"Training set size: {len(train_dataset)}")
     logging.info(f"Validation set size: {len(val_dataset)}")
-
-    interactive_mode = os.getenv('INTERACTIVE_MODE', 'true').lower() == 'true'
-    
-    if interactive_mode:
-        logging.info("훈련을 시작하려면 아무 키나 입력하세요...")
-        running = input("")
 
 
     if opt.loss == 'focal_loss':
@@ -214,6 +227,11 @@ def main():
         logging.info(f"Head trainable params: {sum(p.numel() for p in metric_fc.parameters() if p.requires_grad):,}")
         logging.info('==' * 30)
 
+    interactive_mode = os.getenv('INTERACTIVE_MODE', 'true').lower() == 'true'
+    
+    if interactive_mode:
+        logging.info("훈련을 시작하려면 아무 키나 입력하세요...")
+        running = input("")
 
 
     scheduler = utils.lr_scheduler.PolynomialLRWarmup(
@@ -372,6 +390,8 @@ def main():
                 })
             except Exception as e:
                 logging.error(f"Error logging early stop to wandb: {e}")
+
+            break
 
     writer.close()
     logging.info("Training finished.")

@@ -95,6 +95,14 @@ class Dataset(data.Dataset):
                 V2.RandomHorizontalFlip(p=0.3),
                 V2.RandomRotation(degrees=10),
             ])
+        elif self.phase == 'val':
+
+            self.transforms = V2.Compose([
+                V2.ToTensor(),
+                V2.CenterCrop(size=(112, 112)),
+                V2.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
+            ])
+
 
 
     @property
@@ -118,7 +126,9 @@ class Dataset(data.Dataset):
             raise FileNotFoundError(f"IMAGE path error: {img_path}, error: {e}")
 
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        image = self.CLAHE_transform(image=image)['image']  
+
+        if self.phase == 'train':
+            image_rgb = self.CLAHE_transform(image=image_rgb)['image']  
 
         image = Image.fromarray(image_rgb)
         transformed_image = self.transforms(image).type(torch.float32)
