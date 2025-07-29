@@ -2,10 +2,11 @@ from torch.optim.lr_scheduler import _LRScheduler
 import warnings
 
 class PolynomialLRWarmup(_LRScheduler):
-    def __init__(self, optimizer, warmup_iters, total_iters=5, power=1.0, last_epoch=-1):
+    def __init__(self, optimizer, warmup_iters, total_iters=5, power=1.0, last_epoch=-1 , limit_lr=1e-5):
         self.total_iters = total_iters
         self.power = power
         self.warmup_iters = warmup_iters
+        self.limit_lr = limit_lr  # 최소 학습률 제한
 
         super().__init__(optimizer, last_epoch=last_epoch )
 

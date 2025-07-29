@@ -3,34 +3,34 @@ import os
 
 class Config:
     def __init__(self):
-        self.backbone = 'resnet50'
-        self.classify = 'softmax'
-        self.num_classes = None
+        self.backbone = 'irsnet50'
         self.metric = 'arc_margin'
-        self.easy_margin = False
-        self.use_se = False
+        self.easy_margin = True
         self.loss = 'cross_entropy'
 
-        self.train_batch_size = 384 # 256 , 384 ,448 , 512
+        self.batch_size = 256 # 256 , 384 ,448 , 512
         self.input_size = (3, 112, 112)
-        self.max_epoch = 50
-        self.lr = 1e-1
+        self.max_epoch = 100
+        self.backbone_lr = 5e-3 # 사전학습 1e-4 or 5e-4 처음 1e-3 , 5e-3
+        self.head_lr = 1e-3
         self.lr_step = 10
         self.lr_decay = 0.95
-        self.weight_decay = 5e-4
+        self.weight_decay = 1e-4 # 데이터셋이 작다면 1e-4, 데이터셋이 크다면 5e-4
         self.optimizer = 'adamw'
-        self.backbone_pretrained_weights = None
 
-        self.train_root = '/home/ubuntu/arcface-pytorch/dataset/ms1m-arcface' # dataset/ms1m-arcface
+        self.train_root = './pair_aligned' 
 
-        self.checkpoints_path = 'checkpoints'
-        self.num_workers = 4
+        self.checkpoint = 'checkpoints'
         self.print_freq = 50
         self.save_interval = 10
 
-        self.head_pretrained_weight = 'checkpoints/best/iresnet50_head_best.pth_1'
+
+        self.backbone_pretrained_weights = 'models/weight/backbone_ir50_asia.pth'
+        self.head_pretrained_weights = None
 
         self.optimizer_pretrained = None
+
+        self.name = None
 
 def create_parser():
 
@@ -39,38 +39,29 @@ def create_parser():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
+
+
     model_group = parser.add_argument_group('Model Architecture')
 
-    model_group.add_argument('--backbone', type=str, default='iresnet50',
+    model_group.add_argument('--backbone', type=str, default=None,
                            choices=['iresnet50', 'iresnet100'],
                            help='Backbone architecture')
     
-    model_group.add_argument('--classify', type=str, default='softmax',
-                           choices=['softmax', 'arcface'],
-                           help='Classification method')
-    
-    model_group.add_argument('--num_classes', type=int, default=None,
-                           help='Number of classes (auto-detected if None)')
-    
-    model_group.add_argument('--metric', type=str, default='arc_margin',
+
+    model_group.add_argument('--metric', type=str, default=None,
                            choices=['add_margin', 'arc_margin', 'sphere'],
                            help='Metric learning method')
 
-    model_group.add_argument('--easy_margin', action='store_true', default=False,
-                           help='Use easy margin for ArcFace')
+    model_group.add_argument('--easy_margin', action='store_true',default=None,
+                           help='Use easy margin for ArcFace'),
     
-    model_group.add_argument('--use_se', action='store_true',
-                           help='Use Squeeze-and-Excitation in ResNet')
-
     model_group.add_argument('--loss', type=str, default='cross_entropy',
                            choices=['focal_loss', 'cross_entropy'],
                            help='Loss  function')
     
-    model_group.add_argument('--num_workers', type=int, default=4,
-                           help='Number of workers for data loading(Recommend CPU CORE // 2)')
 
     model_group.add_argument('--backbone_pretrained_weights', type=str, 
-                             default='models/weight/ms1mv3_arcface_r50_fp16.pth',
+                             default=None,
                              choices=['models/weight/ms1mv3_arcface_r50_fp16.pth',
                                       'models/weight/ms1mv3_arcface_r100_fp16.pth'],
                            help='Path to pre-trained weights file')
@@ -84,46 +75,45 @@ def create_parser():
     train_group.add_argument('--optimizer_pretrained_path',type=str,
                              help='pretrained optimzer call path')
 
-    train_group.add_argument('--train_batch_size', type=int,
+    train_group.add_argument('--batch_size', type=int,
                            help='Training batch size')
     
     train_group.add_argument('--input_size', type=str, default='1,112,112',
                            help='Input shape as "C,H,W"')
     
-    train_group.add_argument('--max_epoch', type=int, default=50,
+    train_group.add_argument('--max_epoch', type=int, default=None,
                            help='Maximum number of epochs')
     
-    train_group.add_argument('--lr', type=float, default=1e-1,
+    train_group.add_argument('--lr', type=float, default=None,
                            help='Initial learning rate')
     
-    train_group.add_argument('--lr_step', type=int, default=10,
+    train_group.add_argument('--lr_step', type=int, default=None,
                            help='Learning rate decay step')
     
-    train_group.add_argument('--lr_decay', type=float, default=0.95,
+    train_group.add_argument('--lr_decay', type=float, default=None,
                            help='Learning rate decay factor')
     
-    train_group.add_argument('--weight_decay', type=float, default=5e-4,
+    train_group.add_argument('--weight_decay', type=float, default=None,
                            help='Weight decay')
     
     train_group.add_argument('--optimizer', type=str, default='adamw',
                            choices=['sgd', 'adam' ,'adamw'],
                            help='Optimizer type')
-    train_group.add_argument('--print_freq', type=int, default=100,
+    
+    train_group.add_argument('--print_freq', type=int, default=10,
                            help='Print frequency')
     
 
     # Model paths
-    model_path_group = parser.add_argument_group('Model Paths')
-    model_path_group.add_argument('--checkpoints_path', type=str, default='checkpoints',
+    model_path_group = parser.add_argument_group('Mowandb_namedel Paths')
+    model_path_group.add_argument('--checkpoint', type=str, default=None,
                                 help='Checkpoints save directory')
-    model_path_group.add_argument('--load_model_path', type=str, default='models/resnet18.pth',
-                                help='Pre-trained model path')
-    model_path_group.add_argument('--test_model_path', type=str, default='checkpoints/resnet18_110.pth',
-                                help='Model path for testing')
-    model_path_group.add_argument('--save_interval', type=int, default=10,
+    model_path_group.add_argument('--save_interval', type=int, default=None,
                                 help='Model save interval (epochs)')
     model_path_group.add_argument('--train_root', type=str,
                                 help='Train root directory')
+    model_path_group.add_argument('--name', type=str, default=None,
+                                help='Weights save name')
     
 
     return parser
@@ -142,7 +132,7 @@ def parse_config():
                     value = tuple(map(int, value.split(',')))
                 setattr(cfg, key, value)
             
-    os.makedirs(cfg.checkpoints_path, exist_ok=True)
+    os.makedirs(cfg.checkpoint, exist_ok=True)
     
     return cfg
 

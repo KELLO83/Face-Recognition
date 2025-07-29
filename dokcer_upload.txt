@@ -1,0 +1,33 @@
+
+실행중지 방법 docker stop arcface-training
+코드 수정시 재빌드 방법docker build -t arcface-pytorch:latest .
+
+
+docker run -it --gpus all --name arcface-training -p 6006:6006 -v $(pwd)/checkpoints:/workspace/checkpoints
+ -v $(pwd)/logs:/workspace/logs -v $(pwd)/data:/workspace/data arcface-pytorch:latest python train.py
+
+
+
+docker run -it --gpus all --name arcface-training --shm-size=8g -p 6006:6006 -e CUDA_HOME=/usr/local/cuda -e PATH=/usr/local/cuda/bin:$PATH -e LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH 
+-v $(pwd)/checkpoints:/workspace/checkpoints -v $(pwd)/logs:/workspace/logs -v $(pwd)/data:/workspace/data arcface-pytorch:latest bash
+
+
+docker run -it --gpus all --name arcface-training --shm-size=8g -p 6006:6006 -e CUDA_HOME=/usr/local/cuda -e PATH=/usr/local/cuda/bin:$PATH -e LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH -v $(pwd)/checkpoints:/workspace/checkpoints -v $(pwd)/logs:/workspace/logs -v $(pwd)/data:/workspace/data arcface-pytorch:latest bash
+
+
+
+
+# 공유 메모리 크기를 늘려서 DataLoader worker 메모리 부족 문제 해결
+docker run --gpus all --rm --shm-size=16g -v /home/ubuntu/arcface-pytorch/data:/workspace/data -v /home/ubuntu/arcface-pytorch/checkpoints:/workspace/checkpoints -v /home/ubuntu/arcface-pytorch/logs:/workspace/logs arcface-pytorch:latest python train.py
+
+# 배치 사이즈 512로 설정하고 num_workers 줄이기 (메모리 절약)
+docker run --gpus all --rm --shm-size=16g -v /home/ubuntu/arcface-pytorch/data:/workspace/data -v /home/ubuntu/arcface-pytorch/checkpoints:/workspace/checkpoints -v /home/ubuntu/arcface-pytorch/logs:/workspace/logs arcface-pytorch:latest python train.py --train_batch_size 512 
+
+
+docker run --gpus all -d --name my_training_container my_image python train.py
+
+docker run --gpus all -d --name arcface_training_bg --shm-size=100g \
+  -v /home/ubuntu/arcface-pytorch/data:/workspace/data \
+  -v /home/ubuntu/arcface-pytorch/checkpoints:/workspace/checkpoints \
+  -v /home/ubuntu/arcface-pytorch/logs:/workspace/logs \
+  arcface-pytorch:latest python train.py
