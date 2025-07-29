@@ -245,7 +245,7 @@ def main():
     scheduler = utils.lr_scheduler.PolynomialLRWarmup(
         optimizer, warmup_iters=10, total_iters=opt.max_epoch, power=1.0 , limit_lr = 1e-5
     )
-    scaler = torch.amp.GradScaler(enabled=False)
+    scaler = torch.amp.GradScaler(enabled=True)
 
     best_val_loss = float('inf')
     best_val_acc = 0.0
@@ -261,7 +261,7 @@ def main():
             data_input = data_input.to(device, non_blocking=True)
             label = label.to(device, non_blocking=True).long()
 
-            with torch.amp.autocast(device_type='cuda', enabled=False):
+            with torch.amp.autocast(device_type='cuda', enabled=True):
                 feature = backbone(data_input)
                 output = metric_fc(feature, label)
                 loss = criterion(output, label)
@@ -269,9 +269,9 @@ def main():
             optimizer.zero_grad()
             scaler.scale(loss).backward()
 
-            scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(backbone.parameters(), 1.0)
-            torch.nn.utils.clip_grad_norm_(metric_fc.parameters(), 1.0)
+            # scaler.unscale_(optimizer)
+            # torch.nn.utils.clip_grad_norm_(backbone.parameters(), 1.0)
+            # torch.nn.utils.clip_grad_norm_(metric_fc.parameters(), 1.0)
 
             scaler.step(optimizer)
             scaler.update()

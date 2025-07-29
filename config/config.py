@@ -18,7 +18,7 @@ class Config:
         self.weight_decay = 1e-4 # 데이터셋이 작다면 1e-4, 데이터셋이 크다면 5e-4
         self.optimizer = 'adamw'
 
-        self.train_root = './pair' 
+        self.train_root = './pair_aligned' 
 
         self.checkpoints_path = 'checkpoints'
         self.print_freq = 50
