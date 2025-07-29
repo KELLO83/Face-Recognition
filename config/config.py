@@ -20,7 +20,7 @@ class Config:
 
         self.train_root = './pair_aligned' 
 
-        self.checkpoints = 'checkpoints'
+        self.checkpoint = 'checkpoints'
         self.print_freq = 50
         self.save_interval = 10
 
