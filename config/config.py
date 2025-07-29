@@ -132,7 +132,7 @@ def parse_config():
                     value = tuple(map(int, value.split(',')))
                 setattr(cfg, key, value)
             
-    os.makedirs(cfg.checkpoints, exist_ok=True)
+    os.makedirs(cfg.checkpoint, exist_ok=True)
     
     return cfg
 
