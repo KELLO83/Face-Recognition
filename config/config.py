@@ -20,7 +20,7 @@ class Config:
 
         self.train_root = './pair_aligned' 
 
-        self.checkpoints_path = 'checkpoints'
+        self.checkpoints = 'checkpoints'
         self.print_freq = 50
         self.save_interval = 10
 
@@ -132,7 +132,7 @@ def parse_config():
                     value = tuple(map(int, value.split(',')))
                 setattr(cfg, key, value)
             
-    os.makedirs(cfg.checkpoints_path, exist_ok=True)
+    os.makedirs(cfg.checkpoints, exist_ok=True)
     
     return cfg
 
