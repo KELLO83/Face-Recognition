@@ -98,8 +98,8 @@ def main():
 
     opt = config.get_config(rank = rank)
     
-    os.makedirs(opt.checkpoints_path, exist_ok=True)
-    log_file_path = os.path.join(opt.checkpoints_path, "training_log.txt")
+    os.makedirs(opt.checkpoint, exist_ok=True)
+    log_file_path = os.path.join(opt.checkpoint, "training_log.txt")
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
@@ -366,8 +366,8 @@ def main():
         should_save_regular = (opt.save_interval > 0 and epoch % opt.save_interval == 0)
         should_save_first = (epoch == 0)  
         if should_save_first or should_save_regular:
-            logging.info(f"Saving model at epoch {epoch} to {opt.checkpoints_path}")
-            save_model(backbone, metric_fc, opt.checkpoints_path,opt.backbone, epoch)
+            logging.info(f"Saving model at epoch {epoch} to {opt.checkpoint}")
+            save_model(backbone, metric_fc, opt.checkpoint,opt.backbone, epoch)
 
 
 
@@ -380,7 +380,7 @@ def main():
             logging.info(best_model_message)
             train_log_file(log_file_path, best_model_message)
 
-            best_save_dir = os.path.join(opt.checkpoints_path, 'best')
+            best_save_dir = os.path.join(opt.checkpoint, 'best')
             save_model(backbone, metric_fc, best_save_dir, opt.backbone, epoch, is_best=True)
 
         

@@ -52,8 +52,8 @@ def create_parser():
                            choices=['add_margin', 'arc_margin', 'sphere'],
                            help='Metric learning method')
 
-    model_group.add_argument('--easy_margin', action='store_true', default=False,
-                           help='Use easy margin for ArcFace')
+    model_group.add_argument('--easy_margin', action='store_true',default=None,
+                           help='Use easy margin for ArcFace'),
     
     model_group.add_argument('--loss', type=str, default='cross_entropy',
                            choices=['focal_loss', 'cross_entropy'],
@@ -106,13 +106,9 @@ def create_parser():
 
     # Model paths
     model_path_group = parser.add_argument_group('Mowandb_namedel Paths')
-    model_path_group.add_argument('--checkpoints_path', type=str, default='checkpoints',
+    model_path_group.add_argument('--checkpoint', type=str, default=None,
                                 help='Checkpoints save directory')
-    model_path_group.add_argument('--load_model_path', type=str, default='models/resnet18.pth',
-                                help='Pre-trained model path')
-    model_path_group.add_argument('--test_model_path', type=str, default='checkpoints/resnet18_110.pth',
-                                help='Model path for testing')
-    model_path_group.add_argument('--save_interval', type=int, default=10,
+    model_path_group.add_argument('--save_interval', type=int, default=None,
                                 help='Model save interval (epochs)')
     model_path_group.add_argument('--train_root', type=str,
                                 help='Train root directory')
