@@ -3,7 +3,7 @@ from models.backbone.ir_ASIS_Resnet import Backbone
 import torchinfo
 
 weight = torch.load('models/weight/backbone_ir50_asia.pth', map_location='cpu')
-weight = torch.load('checkpoints/best/irsnet50/irsnet50_best.pth' , map_location='cpu')
+# weight = torch.load('models/weight/adaface_ir50_webface4m.ckpt' , map_location='cpu')
 
 
 

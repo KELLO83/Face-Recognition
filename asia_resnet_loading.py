@@ -3,18 +3,21 @@ import torch
 from models.backbone.ir_ASIS_Resnet import Backbone
 import torchinfo
 
-weight = torch.load('models/weight/backbone_ir50_asia.pth', map_location='cpu')
-
+weight2 = torch.load('models/weight/backbone_ir50_asia.pth', map_location='cpu')
+weight = torch.load('models/weight/adaface_ir50_webface4m.ckpt' , map_location='cpu')
+weight = weight['state_dict']
 backbone = Backbone(input_size=(112, 112, 3), num_layers=50)
-print(backbone)
 load_result = backbone.load_state_dict(weight, strict=False)
 
+
+print("누락된 가중치 : {}".format(load_result.missing_keys))
+print("예상치못한 가중치 : {}".format(load_result.unexpected_keys))
 
 for name, param in backbone.named_parameters():
     if 'body.' in name:
         try:
             body_idx = int(name.split('.')[1])
-            if body_idx < 23: 
+            if body_idx < 20: 
                 param.requires_grad = False
         except (ValueError, IndexError):
             continue

@@ -16,32 +16,16 @@ import albumentations as A
 import matplotlib.pyplot as plt
 
 def tensor_to_cv2_image(tensor_image):
-    """
-    PyTorch tensor를 OpenCV 이미지로 변환
-    Args:
-        tensor_image: (C, H, W) 형태의 tensor 또는 (B, C, H, W) 배치
-    Returns:
-        OpenCV 이미지 (H, W, C) BGR 형태
-    """
-    # 배치에서 첫 번째 이미지 선택 (필요시)
     if len(tensor_image.shape) == 4:  # (B, C, H, W)
         tensor_image = tensor_image[0]
-    
-    # GPU tensor라면 CPU로 이동
+
     if tensor_image.is_cuda:
         tensor_image = tensor_image.cpu()
     
-    # (C, H, W) -> (H, W, C)로 변환
+
     image = tensor_image.permute(1, 2, 0).numpy()
-    
-    # 정규화 해제: [-1, 1] -> [0, 1]
-    # Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]) 역변환
-    image = image * 0.5 + 0.5  # [-1, 1] -> [0, 1]
-    
-    # [0, 1] -> [0, 255]
+    image = image * 0.5 + 0.5  
     image = (image * 255).astype(np.uint8)
-    
-    # RGB -> BGR (OpenCV 형태)
     image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
     
     return image_bgr
@@ -185,7 +169,6 @@ if __name__ == '__main__':
     print(f"   - 클래스 수: {dataset.get_classes}")
     print(f"   - 첫 10개 클래스: {dataset.classes[:10]}")
     
-    # 클래스별 매핑 정보 출력
     print(f"\n🏷️ 클래스 -> 라벨 매핑 (처음 20개):")
     for i, cls_name in enumerate(dataset.classes[:20]):
         print(f"   폴더 '{cls_name}' -> 라벨 {i}")
@@ -234,15 +217,6 @@ if __name__ == '__main__':
             print(f"       예상 라벨: {expected_label_tensor.tolist()}")
 
 
-        # # 간단한 시각화 (선택사항)
-        # if index < 2:
-        #     print(f"   �️ Tensor 통계:")
-        #     print(f"      - Min: {transformed.min().item():.4f}")
-        #     print(f"      - Max: {transformed.max().item():.4f}")
-        #     print(f"      - Mean: {transformed.mean().item():.4f}")
-        #     print(f"      - Std: {transformed.std().item():.4f}")
-    
-    # 최종 매핑 상태 요약
     print(f"\n✅ Dataset 매핑 검증 완료!")
     print(f"📈 매핑 요약:")
     print(f"   - 사용된 클래스 정렬 방식: natsort")

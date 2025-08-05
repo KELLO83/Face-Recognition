@@ -66,6 +66,8 @@ def load_weights(model, weight_path, model_name, device):
             if load_result.missing_keys or load_result.unexpected_keys:
                 logging.info(f"Missing keys for {model_name}: {load_result.missing_keys}")
                 logging.info(f"Unexpected keys for {model_name}: {load_result.unexpected_keys}")
+            else:
+                logging.info(f"All keys for {model_name} loaded successfully.")
         except Exception as e:
             logging.error(f"Error loading weights for {model_name}: {e}")
     else:

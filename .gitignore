@@ -91,6 +91,7 @@ coverage.xml
 *.cover
 *.log
 
+models/weight/
 # === 가상환경 ===
 .venv/
 venv/
