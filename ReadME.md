@@ -12,7 +12,7 @@
 
 ### Top Performers
 
-[![Accuracy Leader](https://img.shields.io/badge/🏆_Accuracy_Leader-TopoFR_R200-gold?style=for-the-badge)](https://github.com/KELLO83/Face-Recognition)
+[![Accuracy Leader](https://img.shields.io/badge/🏆_Accuracy_Leader-AdaFace_ir101-gold?style=for-the-badge)](https://github.com/KELLO83/Face-Recognition)
 [![Speed Leader](https://img.shields.io/badge/⚡_Speed_Leader-ArcFace_irsnet50-blue?style=for-the-badge)](https://github.com/KELLO83/Face-Recognition)
 [![Efficiency Leader](https://img.shields.io/badge/💾_Efficiency_Leader-ArcFace_irsnet50-green?style=for-the-badge)](https://github.com/KELLO83/Face-Recognition)
 
@@ -24,8 +24,8 @@
 
 | Model | TAR@FAR 0.01% | Rank-1 Acc | Latency (ms) | Throughput (FPS) | Size (MB) | GFLOPs |
 |-------|---------------|-------------|--------------|------------------|-----------|---------|
-| **TopoFR R200 (Glint360k)** ⭐ | **95.39%** | 98.95% | 45.74 | 21.86 | 672.28 | 23.485 |
-| AdaFace ir101 (webface12m) | 96.08% | **99.19%** | 13.57 | 73.67 | 483.74 | 12.122 |
+| **AdaFace ir101 (webface12m)** ⭐| **96.08%** | **99.19%** | 13.57 | 73.67 | 483.74 | 12.122 |
+| TopoFR R200 (Glint360k) | 95.39% | 98.95% | 45.74 | 21.86 | 672.28 | 23.485 |
 | AdaFace ir101 (webface4m) | 92.64% | 99.06% | 13.57 | 73.67 | 483.74 | 12.122 |
 | TopoFR R100 (Glint360k) | 92.34% | 98.79% | 24.62 | 40.62 | 373.88 | 12.128 |
 | TopoFR R200 (ms1mv2) | 89.19% | 98.23% | 35.55 | 28.13 | 672.28 | 23.485 |
@@ -40,15 +40,15 @@
 
 ```
                     Accuracy  Speed   Size   Overall
-TopoFR R200         ████████  ███     ██     ███████
-AdaFace ir101       ████████  ██████  ████   ███████  
+AdaFace ir101       ████████  ██████  ██████ ████████
+TopoFR R200         ████████  ██      ████   ██████ 
 ArcFace irsnet50    ████      ████████ ██████ ██████
-TransFace vit_l     ███████   ██████  █      █████
+TransFace vit_l     ███████   █████   █      █████
 ```
 
 ### Performance Analysis
 
-🏆 **Best Accuracy**: TopoFR R200 (Glint360k) - 95.39% TAR@FAR 0.01%  
+🏆 **Best Accuracy**: AdaFace ir101 (webface12m) - 96.08% TAR@FAR 0.01%  
 ⚡ **Fastest Model**: ArcFace irsnet50 - 5.45ms latency, 183.58 FPS  
 💾 **Smallest Model**: ArcFace irsnet50 - 292.27 MB  
 ⚖️ **Best Balance**: AdaFace ir101 (webface12m) - High accuracy + Reasonable speed
